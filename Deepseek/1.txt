@@ -1,0 +1,154 @@
+Креативные тесты на проверку
+
+import requests
+import pytest
+import uuid
+
+BASE_URL = "https://petstore.swagger.io/v2"
+
+def test_create_pet_with_extreme_values():
+    """Создание питомца с экстремальными значениями полей"""
+    data = {
+        "id": 2**31 - 1,  # Максимальное значение для 32-битного integer
+        "name": "X" * 1024,  # Очень длинное имя
+        "category": {
+            "name": "🐉🚀§±!@#$%^&*()",  # Спецсимволы и эмодзи
+        },
+        "photoUrls": [
+            f"https://example.com/{uuid.uuid4()}.jpg"  # Уникальный URL
+        ],
+        "status": "available"
+    }
+    
+    response = requests.post(f"{BASE_URL}/pet", json=data)
+    assert response.status_code == 200, "Экстремальные значения не обработаны"
+    assert response.json()['id'] == data['id']
+
+def test_pet_status_validation():
+    """Проверка валидации несуществующего статуса"""
+    data = {
+        "name": "InvalidStatusPet",
+        "status": "teleported"  # Невалидный статус
+    }
+    
+    response = requests.post(f"{BASE_URL}/pet", json=data)
+    assert response.status_code == 400, "Принят несуществующий статус"
+
+def test_parallel_photo_uploads():
+    """Параллельная загрузка изображений для одного питомца"""
+    pet_id = 999888777
+    files = [
+        ('file', ('image1.jpg', b'fake_jpeg_content', 'image/jpeg')),
+        ('file', ('image2.png', b'fake_png_content', 'image/png'))
+    ]
+    
+    # Создаем питомца
+    requests.post(f"{BASE_URL}/pet", json={"id": pet_id, "name": "MultiPhotoPet"})
+    
+    # Загрузка изображений
+    for file in files:
+        response = requests.post(
+            f"{BASE_URL}/pet/{pet_id}/uploadImage",
+            files=[file]
+        )
+        assert response.status_code == 200, "Ошибка загрузки изображения"
+    
+    # Проверка количества фото
+    pet_data = requests.get(f"{BASE_URL}/pet/{pet_id}").json()
+    assert len(pet_data['photoUrls']) == 2, "Не все изображения сохранены"
+
+
+def test_order_time_paradox():
+    """Попытка создать заказ с датой из прошлого"""
+    order_data = {
+        "id": 111222333,
+        "petId": 1,
+        "quantity": 1,
+        "shipDate": "1969-07-20T00:00:00Z",  # Дата высадки на Луну
+        "status": "approved"
+    }
+    
+    response = requests.post(f"{BASE_URL}/store/order", json=order_data)
+    assert response.status_code == 200, "Проблемы с временными парадоксами"
+    assert "shipDate" in response.json()
+
+def test_negative_inventory():
+    """Попытка создать заказ с отрицательным количеством"""
+    order_data = {
+        "petId": 1,
+        "quantity": -5,  # Негативное количество
+        "status": "approved"
+    }
+    
+    response = requests.post(f"{BASE_URL}/store/order", json=order_data)
+    assert response.status_code == 400, "Разрешено отрицательное количество"
+
+def test_zombie_order():
+    """Взаимодействие с удаленным заказом"""
+    order_id = 987654321
+    
+    # Создаем и удаляем заказ
+    requests.post(f"{BASE_URL}/store/order", json={"id": order_id, "status": "placed"})
+    requests.delete(f"{BASE_URL}/store/order/{order_id}")
+    
+    # Попытка обновить удаленный заказ
+    response = requests.put(
+        f"{BASE_URL}/store/order/{order_id}",
+        json={"status": "approved"}
+    )
+    assert response.status_code == 404, "Работа с удаленным заказом возможна"
+
+def test_quantum_user():
+    """Создание пользователя в суперпозиции состояний"""
+    user_data = {
+        "username": "schrodinger_cat",
+        "email": "cat@box.com",  # Некорректный email
+        "userStatus": 255  # Несуществующий статус
+    }
+    
+    response = requests.post(f"{BASE_URL}/user", json=user_data)
+    assert response.status_code == 200, "Квантовый пользователь не создан"
+    
+    # Проверка сохранения некорректных данных
+    user_response = requests.get(f"{BASE_URL}/user/{user_data['username']}")
+    assert user_response.json()['email'] == user_data['email']
+
+def test_emoji_user_profile():
+    """Создание пользователя с эмодзи в данных"""
+    user_data = {
+        "username": "👽Alien123",
+        "firstName": "🛸",
+        "lastName": "🚀",
+        "password": "🌌💫🌠"
+    }
+    
+    response = requests.post(f"{BASE_URL}/user", json=user_data)
+    assert response.status_code == 200, "Проблемы с Unicode"
+    
+    # Проверка сохранения эмодзи
+    user_info = requests.get(f"{BASE_URL}/user/{user_data['username']}").json()
+    assert user_info['firstName'] == "🛸"
+
+def test_password_invisibility():
+    """Проверка безопасности паролей"""
+    password = "TopSecret123"
+    user_data = {
+        "username": "secret_agent",
+        "password": password
+    }
+    
+    # Создание пользователя
+    requests.post(f"{BASE_URL}/user", json=user_data)
+    
+    # Получение данных пользователя
+    user_info = requests.get(f"{BASE_URL}/user/{user_data['username']}").json()
+    
+    # Проверка, что пароль не возвращается в ответе
+    assert "password" not in user_info, "Пароль виден в ответе API"
+    assert user_info.get('passwordHash') is None, "Хэш пароля раскрыт"
+
+if __name__ == "__main__":
+    # Запуск всех тестов
+    pytest.main([__file__, "-v"])
+
+
