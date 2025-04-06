@@ -1,0 +1,569 @@
+
+Не выполнил изначального запроса(первый(сделал так еще 3 раза): синт. ошибки(русские переменные), второй: отсутствие обработчика ошибок)
+Сделал код после многих попыток. Проблемы: с удалением(не успевает обновится на сайте), нашел ошибку безопас., странности с поточкой
+Быстрая
+
+
+import requests
+import json
+import unittest
+
+BASE_URL = "https://petstore.swagger.io/v2"
+
+class ApiTests(unittest.TestCase):
+
+    def assert_with_message(self, condition, message_pass, message_fail, response_code=None, response_text=None):
+        """
+        Пользовательская функция assert для вывода развернутых сообщений в консоль.
+        """
+        if condition:
+            print(f"\033[92m[PASS]\033[0m {message_pass}") # Зеленый цвет для PASS
+        else:
+            print(f"\033[91m[FAIL]\033[0m {message_fail}") # Красный цвет для FAIL
+            if response_code:
+                print(f"    Код ответа: {response_code}")
+            if response_text:
+                print(f"    Текст ответа: {response_text}")
+        self.assertTrue(condition) # Стандартный assert для unittest, чтобы тесты не прерывались
+
+    # 1. Проверка основных операций CRUD для сущности "Питомец"
+    def test_pet_crud(self):
+        print("\n[НАЧАЛО ТЕСТА] Проверка CRUD операций для сущности 'Питомец'")
+
+        # 1.1. Создание питомца
+        print("  [ПОДТЕСТ] Создание питомца")
+        pet_payload = {
+            "id": 12345,
+            "category": {"id": 1, "name": "Dogs"},
+            "name": "doggie",
+            "photoUrls": ["string"],
+            "tags": [{"id": 1, "name": "friendly"}],
+            "status": "available"
+        }
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(f"{BASE_URL}/pet", headers=headers, data=json.dumps(pet_payload))
+
+        self.assert_with_message(response.status_code == 200,
+                                 "Питомец успешно создан (POST /pet).",
+                                 "Ошибка при создании питомца (POST /pet).",
+                                 response.status_code, response.text)
+
+        created_pet_id = pet_payload['id']
+
+        # 1.2. Получение питомца
+        print("  [ПОДТЕСТ] Получение питомца")
+        response = requests.get(f"{BASE_URL}/pet/{created_pet_id}")
+        self.assert_with_message(response.status_code == 200,
+                                 f"Питомец успешно получен (GET /pet/{created_pet_id}).",
+                                 f"Ошибка при получении питомца (GET /pet/{created_pet_id}).",
+                                 response.status_code, response.text)
+
+        response_json = response.json()
+        self.assert_with_message(response_json['name'] == pet_payload['name'],
+                                 "Имя питомца соответствует отправленным данным.",
+                                 "Имя питомца не соответствует отправленным данным.",
+                                 response.status_code, response.text)
+
+        # 1.3. Обновление питомца
+        print("  [ПОДТЕСТ] Обновление питомца")
+        updated_pet_payload = {
+            "id": created_pet_id,
+            "category": {"id": 1, "name": "Dogs"},
+            "name": "doggie_updated",
+            "photoUrls": ["string"],
+            "tags": [{"id": 1, "name": "updated_friendly"}],
+            "status": "sold"
+        }
+        response = requests.put(f"{BASE_URL}/pet", headers=headers, data=json.dumps(updated_pet_payload))
+        self.assert_with_message(response.status_code == 200,
+                                 "Питомец успешно обновлен (PUT /pet).",
+                                 "Ошибка при обновлении питомца (PUT /pet).",
+                                 response.status_code, response.text)
+
+        # Проверка, что обновление прошло успешно, получив питомца еще раз
+        response = requests.get(f"{BASE_URL}/pet/{created_pet_id}")
+        response_json = response.json()
+        self.assert_with_message(response_json['name'] == updated_pet_payload['name'] and response_json['status'] == updated_pet_payload['status'],
+                                 "Данные питомца успешно обновлены.",
+                                 "Данные питомца не были обновлены.",
+                                 response.status_code, response.text)
+
+
+        # 1.4. Удаление питомца
+        print("  [ПОДТЕСТ] Удаление питомца")
+        response = requests.delete(f"{BASE_URL}/pet/{created_pet_id}")
+        self.assert_with_message(response.status_code == 200,
+                                 f"Питомец успешно удален (DELETE /pet/{created_pet_id}).",
+                                 f"Ошибка при удалении питомца (DELETE /pet/{created_pet_id}).",
+                                 response.status_code, response.text)
+
+        # Попытка получить удаленного питомца, ожидаем 404
+        response = requests.get(f"{BASE_URL}/pet/{created_pet_id}")
+        self.assert_with_message(response.status_code == 404,
+                                 "Подтверждение удаления: питомец не найден (GET /pet/{created_pet_id} после DELETE).",
+                                 "Ошибка при удалении: питомец все еще доступен (GET /pet/{created_pet_id} после DELETE).",
+                                 response.status_code, response.text)
+
+
+    # 2. Проверка работы API для заказов (Store)
+    def test_store_order_crud(self):
+        print("\n[НАЧАЛО ТЕСТА] Проверка API для заказов (Store)")
+
+        # 2.1. Размещение заказа
+        print("  [ПОДТЕСТ] Размещение заказа")
+        order_payload = {
+            "petId": 12345, # Используем petId, который могли создать в предыдущем тесте, но лучше создать новый для изоляции тестов
+            "quantity": 1,
+            "shipDate": "2024-01-01T10:10:10.000Z",
+            "status": "placed",
+            "complete": True
+        }
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(f"{BASE_URL}/store/order", headers=headers, data=json.dumps(order_payload))
+        self.assert_with_message(response.status_code == 200,
+                                 "Заказ успешно размещен (POST /store/order).",
+                                 "Ошибка при размещении заказа (POST /store/order).",
+                                 response.status_code, response.text)
+
+        created_order_id = response.json()['orderId'] if 'orderId' in response.json() else response.json()['id'] # Swagger petstore возвращает orderId или id в зависимости от запроса
+
+        # 2.2. Получение заказа
+        print("  [ПОДТЕСТ] Получение заказа")
+        response = requests.get(f"{BASE_URL}/store/order/{created_order_id}")
+        self.assert_with_message(response.status_code == 200,
+                                 f"Заказ успешно получен (GET /store/order/{created_order_id}).",
+                                 f"Ошибка при получении заказа (GET /store/order/{created_order_id}).",
+                                 response.status_code, response.text)
+
+        response_json = response.json()
+        self.assert_with_message(str(response_json['petId']) == str(order_payload['petId']), # petId может вернуться как int или string
+                                 "Информация о заказе соответствует отправленным данным (petId).",
+                                 "Информация о заказе не соответствует отправленным данным (petId).",
+                                 response.status_code, response.text)
+
+        # 2.3. Удаление заказа
+        print("  [ПОДТЕСТ] Удаление заказа")
+        response = requests.delete(f"{BASE_URL}/store/order/{created_order_id}")
+        self.assert_with_message(response.status_code == 200,
+                                 f"Заказ успешно удален (DELETE /store/order/{created_order_id}).",
+                                 f"Ошибка при удалении заказа (DELETE /store/order/{created_order_id}).",
+                                 response.status_code, response.text)
+
+        # Попытка получить удаленный заказ, ожидаем 404
+        response = requests.get(f"{BASE_URL}/store/order/{created_order_id}")
+        self.assert_with_message(response.status_code == 404,
+                                 "Подтверждение удаления: заказ не найден (GET /store/order/{created_order_id} после DELETE).",
+                                 "Ошибка при удалении: заказ все еще доступен (GET /store/order/{created_orderId} после DELETE).",
+                                 response.status_code, response.text)
+
+
+    # 3. Проверка управления пользователями
+    def test_user_management(self):
+        print("\n[НАЧАЛО ТЕСТА] Проверка управления пользователями")
+
+        username = "testuser"
+        user_payload = {
+            "id": 10,
+            "username": username,
+            "firstName": "Test",
+            "lastName": "User",
+            "email": "test@example.com",
+            "password": "password123",
+            "phone": "123-456-7890",
+            "userStatus": 1
+        }
+        headers = {'Content-Type': 'application/json'}
+
+        # 3.1. Создание пользователя
+        print("  [ПОДТЕСТ] Создание пользователя")
+        response = requests.post(f"{BASE_URL}/user", headers=headers, data=json.dumps(user_payload))
+        self.assert_with_message(response.status_code == 200,
+                                 "Пользователь успешно создан (POST /user).",
+                                 "Ошибка при создании пользователя (POST /user).",
+                                 response.status_code, response.text)
+
+        # 3.2. Получение информации о пользователе
+        print("  [ПОДТЕСТ] Получение информации о пользователе")
+        response = requests.get(f"{BASE_URL}/user/{username}")
+        self.assert_with_message(response.status_code == 200,
+                                 f"Информация о пользователе успешно получена (GET /user/{username}).",
+                                 f"Ошибка при получении информации о пользователе (GET /user/{username}).",
+                                 response.status_code, response.text)
+        response_json = response.json()
+        self.assert_with_message(response_json['username'] == username,
+                                 "Имя пользователя соответствует отправленным данным.",
+                                 "Имя пользователя не соответствует отправленным данным.",
+                                 response.status_code, response.text)
+
+        # 3.3. Обновление данных пользователя
+        print("  [ПОДТЕСТ] Обновление данных пользователя")
+        updated_user_payload = {
+            "id": 10,
+            "username": username,
+            "firstName": "UpdatedTest",
+            "lastName": "UpdatedUser",
+            "email": "updated_test@example.com",
+            "password": "newpassword456", # Пароль тоже обновляем для полноты теста, но в реальной жизни это может быть отдельный endpoint
+            "phone": "987-654-3210",
+            "userStatus": 2
+        }
+        response = requests.put(f"{BASE_URL}/user/{username}", headers=headers, data=json.dumps(updated_user_payload))
+        self.assert_with_message(response.status_code == 200,
+                                 "Данные пользователя успешно обновлены (PUT /user/{username}).",
+                                 "Ошибка при обновлении данных пользователя (PUT /user/{username}).",
+                                 response.status_code, response.text)
+
+        # Проверка, что обновление прошло успешно
+        response = requests.get(f"{BASE_URL}/user/{username}")
+        response_json = response.json()
+        self.assert_with_message(response_json['firstName'] == updated_user_payload['firstName'] and response_json['userStatus'] == updated_user_payload['userStatus'],
+                                 "Данные пользователя успешно обновлены (проверка после PUT).",
+                                 "Данные пользователя не были обновлены (проверка после PUT).",
+                                 response.status_code, response.text)
+
+
+        # 3.4. Удаление пользователя
+        print("  [ПОДТЕСТ] Удаление пользователя")
+        response = requests.delete(f"{BASE_URL}/user/{username}")
+        self.assert_with_message(response.status_code == 200,
+                                 f"Пользователь успешно удален (DELETE /user/{username}).",
+                                 f"Ошибка при удалении пользователя (DELETE /user/{username}).",
+                                 response.status_code, response.text)
+
+        # Попытка получить удаленного пользователя, ожидаем 404
+        response = requests.get(f"{BASE_URL}/user/{username}")
+        self.assert_with_message(response.status_code == 404,
+                                 "Подтверждение удаления: пользователь не найден (GET /user/{username} после DELETE).",
+                                 "Ошибка при удалении: пользователь все еще доступен (GET /user/{username} после DELETE).",
+                                 response.status_code, response.text)
+
+
+    # 4. Дополнительные проверки для питомцев
+    def test_pet_additional_checks(self):
+        print("\n[НАЧАЛО ТЕСТА] Дополнительные проверки для питомцев")
+
+        # 4.1. Поиск питомцев по статусу
+        print("  [ПОДТЕСТ] Поиск питомцев по статусу 'available'")
+        response = requests.get(f"{BASE_URL}/pet/findByStatus?status=available")
+        self.assert_with_message(response.status_code == 200,
+                                 "Поиск питомцев по статусу 'available' выполнен успешно (GET /pet/findByStatus?status=available).",
+                                 "Ошибка при поиске питомцев по статусу 'available' (GET /pet/findByStatus?status=available).",
+                                 response.status_code, response.text)
+        for pet in response.json():
+            self.assert_with_message(pet['status'] == 'available',
+                                     "Все питомцы в ответе имеют статус 'available'.",
+                                     "Не все питомцы в ответе имеют статус 'available'.",
+                                     response.status_code, response.text)
+
+        print("  [ПОДТЕСТ] Поиск питомцев по статусу 'pending'")
+        response = requests.get(f"{BASE_URL}/pet/findByStatus?status=pending")
+        self.assert_with_message(response.status_code == 200,
+                                 "Поиск питомцев по статусу 'pending' выполнен успешно (GET /pet/findByStatus?status=pending).",
+                                 "Ошибка при поиске питомцев по статусу 'pending' (GET /pet/findByStatus?status=pending).",
+                                 response.status_code, response.text)
+        for pet in response.json():
+            self.assert_with_message(pet['status'] == 'pending',
+                                     "Все питомцы в ответе имеют статус 'pending'.",
+                                     "Не все питомцы в ответе имеют статус 'pending'.",
+                                     response.status_code, response.text)
+
+        print("  [ПОДТЕСТ] Поиск питомцев по статусу 'sold'")
+        response = requests.get(f"{BASE_URL}/pet/findByStatus?status=sold")
+        self.assert_with_message(response.status_code == 200,
+                                 "Поиск питомцев по статусу 'sold' выполнен успешно (GET /pet/findByStatus?status=sold).",
+                                 "Ошибка при поиске питомцев по статусу 'sold' (GET /pet/findByStatus?status=sold).",
+                                 response.status_code, response.text)
+        for pet in response.json():
+            self.assert_with_message(pet['status'] == 'sold',
+                                     "Все питомцы в ответе имеют статус 'sold'.",
+                                     "Не все питомцы в ответе имеют статус 'sold'.",
+                                     response.status_code, response.text)
+
+
+        # 4.2. Поиск питомцев по тегам
+        print("  [ПОДТЕСТ] Поиск питомцев по тегам")
+        tags = "friendly,cute" # Используем несколько тегов для проверки
+        response = requests.get(f"{BASE_URL}/pet/findByTags?tags={tags}")
+        self.assert_with_message(response.status_code == 200,
+                                 f"Поиск питомцев по тегам '{tags}' выполнен успешно (GET /pet/findByTags?tags={tags}).",
+                                 f"Ошибка при поиске питомцев по тегам '{tags}' (GET /pet/findByTags?tags={tags}).",
+                                 response.status_code, response.text)
+        # API Swagger Petstore может не возвращать результаты, если нет питомцев с такими тегами,
+        # поэтому здесь только проверяем успешность запроса. В реальном тесте нужно было бы подготовить данные.
+
+
+    # 5. Проверка аутентификации пользователей и безопасности паролей
+    def test_user_authentication_security(self):
+        print("\n[НАЧАЛО ТЕСТА] Проверка аутентификации пользователей и безопасности паролей")
+
+        username = "testuser_login" # Новый пользователь для тестов логина
+        password = "login_password"
+        user_payload_login_test = {
+            "id": 11,
+            "username": username,
+            "firstName": "LoginTest",
+            "lastName": "User",
+            "email": "login_test@example.com",
+            "password": password,
+            "phone": "111-222-3333",
+            "userStatus": 1
+        }
+        headers = {'Content-Type': 'application/json'}
+        requests.post(f"{BASE_URL}/user", headers=headers, data=json.dumps(user_payload_login_test)) # Создаем пользователя для тестов логина
+
+        # 5.1. Логин пользователя
+        print("  [ПОДТЕСТ] Логин пользователя")
+        response = requests.get(f"{BASE_URL}/user/login?username={username}&password={password}")
+        self.assert_with_message(response.status_code == 200,
+                                 "Логин пользователя выполнен успешно (GET /user/login).",
+                                 "Ошибка при логине пользователя (GET /user/login).",
+                                 response.status_code, response.text)
+        self.assert_with_message("password" not in response.text,
+                                 "Пароль не возвращается в открытом виде в ответе API.",
+                                 "Пароль возвращается в открытом виде в ответе API (УЯЗВИМОСТЬ БЕЗОПАСНОСТИ!).",
+                                 response.status_code, response.text)
+
+
+        # 5.2. Логаут пользователя
+        print("  [ПОДТЕСТ] Логаут пользователя")
+        response = requests.get(f"{BASE_URL}/user/logout")
+        self.assert_with_message(response.status_code == 200,
+                                 "Логаут пользователя выполнен успешно (GET /user/logout).",
+                                 "Ошибка при логауте пользователя (GET /user/logout).",
+                                 response.status_code, response.text)
+
+        # 5.3. Проверка закрытости пароля
+        print("  [ПОДТЕСТ] Проверка закрытости пароля")
+        response = requests.get(f"{BASE_URL}/user/{username}")
+        self.assert_with_message("password" not in response.text,
+                                 "Пароль не возвращается при запросе информации о пользователе (GET /user/{username}).",
+                                 "Пароль возвращается при запросе информации о пользователе (GET /user/{username}) (УЯЗВИМОСТЬ БЕЗОПАСНОСТИ!).",
+                                 response.status_code, response.text)
+
+        print("  [ПОДТЕСТ] Попытка логина с неверным паролем")
+        response = requests.get(f"{BASE_URL}/user/login?username={username}&password=wrong_password")
+        self.assert_with_message(response.status_code != 200 and response.status_code != 404, # Ожидаем код ошибки, но не 404 (пользователь должен существовать)
+                                 "Система отклоняет логин с неверным паролем.",
+                                 "Система принимает логин с неверным паролем (УЯЗВИМОСТЬ БЕЗОПАСНОСТИ!).",
+                                 response.status_code, response.text)
+        self.assert_with_message("invalid password" not in response.text.lower() and "incorrect password" not in response.text.lower() and "wrong password" not in response.text.lower(),
+                                 "Система не раскрывает информацию о правильном пароле в сообщении об ошибке.",
+                                 "Система раскрывает информацию о правильном пароле в сообщении об ошибке (УЯЗВИМОСТЬ БЕЗОПАСНОСТИ!).",
+                                 response.status_code, response.text)
+
+        # 5.4. Ограничение на повторные попытки входа - ТРЕБУЕТ ДОПОЛНИТЕЛЬНОЙ РЕАЛИЗАЦИИ, Swagger Petstore не имеет такой защиты "из коробки".
+        print("  [ПОДТЕСТ] Ограничение на повторные попытки входа - *ПРОВЕРКА ВРУЧНУЮ, Т.К. API НЕ ИМЕЕТ ТАКОЙ ФУНКЦИОНАЛЬНОСТИ*")
+        print("    Инструкция: Выполните несколько запросов на /user/login с неверными данными и проверьте, блокируется ли учетная запись или появляется ли сообщение о превышении лимита попыток.")
+        print("    В Swagger Petstore по умолчанию нет механизма блокировки или ограничения попыток. Эта проверка требует ручного анализа поведения API или настройки дополнительной защиты на сервере.")
+
+
+    # 6. Проверка сценариев с невалидными данными и ошибками
+    def test_invalid_data_errors(self):
+        print("\n[НАЧАЛО ТЕСТА] Проверка сценариев с невалидными данными и ошибками")
+
+        # 6.1. Неверные запросы
+        print("  [ПОДТЕСТ] Запросы с несуществующим ID")
+        invalid_pet_id = 999999
+        response = requests.get(f"{BASE_URL}/pet/{invalid_pet_id}")
+        self.assert_with_message(response.status_code == 404,
+                                 f"Запрос с несуществующим ID ({invalid_pet_id}) возвращает 404 (верный код ошибки для GET /pet/{{petId}}).",
+                                 f"Запрос с несуществующим ID ({invalid_pet_id}) не возвращает 404 (неверный код ошибки для GET /pet/{{petId}}).",
+                                 response.status_code, response.text)
+
+        print("  [ПОДТЕСТ] Запросы с неверными типами данных")
+        invalid_pet_id_str = "abc"
+        response = requests.get(f"{BASE_URL}/pet/{invalid_pet_id_str}")
+        self.assert_with_message(response.status_code == 404 or response.status_code == 400, # Может вернуть 400 или 404 в зависимости от интерпретации ID
+                                 f"Запрос с неверным типом ID ('{invalid_pet_id_str}') возвращает 400 или 404 (верный код ошибки для GET /pet/{{petId}}).",
+                                 f"Запрос с неверным типом ID ('{invalid_pet_id_str}') не возвращает 400 или 404 (неверный код ошибки для GET /pet/{{petId}}).",
+                                 response.status_code, response.text)
+
+
+        # 6.2. Отсутствующие или неполные данные
+        print("  [ПОДТЕСТ] Создание питомца без обязательных полей")
+        pet_payload_incomplete = { # Нет обязательного поля 'name'
+            "id": 12346,
+            "category": {"id": 1, "name": "Cats"},
+            "photoUrls": ["string"],
+            "tags": [{"id": 1, "name": "cute"}],
+            "status": "available"
+        }
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(f"{BASE_URL}/pet", headers=headers, data=json.dumps(pet_payload_incomplete))
+        self.assert_with_message(response.status_code != 200 and response.status_code != 404, # Ожидаем код ошибки валидации, не 200 или 404
+                                 "Система обнаруживает отсутствие обязательных полей при создании питомца.",
+                                 "Система не обнаруживает отсутствие обязательных полей при создании питомца (УЯЗВИМОСТЬ!).",
+                                 response.status_code, response.text)
+
+
+        # 6.3. Проверка создания заказа с некорректными данными
+        print("  [ПОДТЕСТ] Создание заказа с несуществующим ID питомца")
+        order_payload_invalid_pet = {
+            "petId": 999999, # Несуществующий ID питомца
+            "quantity": 1,
+            "shipDate": "2024-01-02T10:10:10.000Z",
+            "status": "placed",
+            "complete": True
+        }
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(f"{BASE_URL}/store/order", headers=headers, data=json.dumps(order_payload_invalid_pet))
+        self.assert_with_message(response.status_code != 200 and response.status_code != 404, # Ожидаем код ошибки, не 200 или 404
+                                 "Система отклоняет создание заказа с несуществующим ID питомца.",
+                                 "Система принимает создание заказа с несуществующим ID питомца (ОШИБКА БИЗНЕС-ЛОГИКИ!).",
+                                 response.status_code, response.text)
+
+
+        # 6.4. Использование неподдерживаемых HTTP-методов
+        print("  [ПОДТЕСТ] Использование неподдерживаемого метода PATCH для /pet")
+        pet_payload_patch_test = {
+            "id": 12347,
+            "category": {"id": 1, "name": "Birds"},
+            "name": "parrot",
+            "photoUrls": ["string"],
+            "tags": [{"id": 1, "name": "talkative"}],
+            "status": "available"
+        }
+        headers = {'Content-Type': 'application/json'}
+        requests.post(f"{BASE_URL}/pet", headers=headers, data=json.dumps(pet_payload_patch_test)) # Создаем питомца для теста PATCH
+
+        response = requests.patch(f"{BASE_URL}/pet", headers=headers, data=json.dumps(pet_payload_patch_test)) # PATCH метод не поддерживается для /pet
+        self.assert_with_message(response.status_code == 405, # Ожидаем 405 Method Not Allowed
+                                 "API возвращает 405 для неподдерживаемого метода PATCH для /pet (верный код ошибки).",
+                                 "API не возвращает 405 для неподдерживаемого метода PATCH для /pet (неверный код ошибки).",
+                                 response.status_code, response.text)
+
+        # 6.5. Проверка ввода слишком длинных строк - *ТРЕБУЕТ ДОПОЛНИТЕЛЬНОЙ РЕАЛИЗАЦИИ, API SCHEMA НЕ ОГРАНИЧИВАЕТ ДЛИНУ СТРОК*
+        print("  [ПОДТЕСТ] Проверка ввода слишком длинных строк - *ПРОВЕРКА ВРУЧНУЮ, Т.К. API SCHEMA НЕ ОГРАНИЧИВАЕТ ДЛИНУ СТРОК*")
+        print("    Инструкция: Попробуйте отправить данные с превышением максимально допустимой длины, если таковые определены в схеме API. В Swagger Petstore schema не задает ограничений на длину строк.")
+        print("    В реальном API нужно проверять ограничения на длину строк, если они есть, чтобы предотвратить переполнение буфера или другие проблемы.")
+
+
+        # 6.6. Тестирование на инъекции и XSS - *ТРЕБУЕТ ДОПОЛНИТЕЛЬНОЙ РЕАЛИЗАЦИИ, НУЖНО ОТПРАВЛЯТЬ ПОТЕНЦИАЛЬНО ОПАСНЫЕ ДАННЫЕ И АНАЛИЗИРОВАТЬ ОТВЕТ*
+        print("  [ПОДТЕСТ] Тестирование на инъекции и XSS - *ПРОВЕРКА ВРУЧНУЮ И АНАЛИЗ ОТВЕТОВ, Т.К. АВТОМАТИЗИРОВАННАЯ ПРОВЕРКА ИНЪЕКЦИЙ ТРЕБУЕТ СПЕЦИАЛИЗИРОВАННЫХ ИНСТРУМЕНТОВ*")
+        print("    Инструкция: Попробуйте отправить данные, содержащие потенциально опасные символы или скрипты в различных полях (например, name, username, tags) и проверьте, как API их обрабатывает.")
+        print("    Примеры данных для XSS: <script>alert('XSS')</script>, <img src='x' onerror='alert(\"XSS\")'>")
+        print("    Примеры данных для SQL Injection: ' OR '1'='1', ; DROP TABLE users;")
+        print("    После отправки данных, нужно проверить, что: ")
+        print("      - API не выполняет вредоносный код.")
+        print("      - Данные корректно экранируются в ответах API (например, при получении питомца или пользователя).")
+        print("      - Нет утечки данных из базы данных или других систем.")
+        print("    Автоматизированная проверка инъекций требует специализированных инструментов и более глубокого анализа, чем простые HTTP-запросы.")
+
+
+        # 6.7. Проверка формата данных
+        print("  [ПОДТЕСТ] Проверка формата данных (неверный формат e-mail при регистрации пользователя)")
+        invalid_email_user_payload = {
+            "id": 12,
+            "username": "invalid_email_user",
+            "firstName": "Invalid",
+            "lastName": "Email",
+            "email": "invalid-email-format", # Неверный формат e-mail
+            "password": "password123",
+            "phone": "123-456-7891",
+            "userStatus": 1
+        }
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(f"{BASE_URL}/user", headers=headers, data=json.dumps(invalid_email_user_payload))
+        self.assert_with_message(response.status_code != 200 and response.status_code != 404, # Ожидаем код ошибки валидации, не 200 или 404
+                                 "Система отклоняет регистрацию пользователя с неверным форматом e-mail.",
+                                 "Система принимает регистрацию пользователя с неверным форматом e-mail (УЯЗВИМОСТЬ!).",
+                                 response.status_code, response.text)
+
+
+        # 6.8. Отсутствие утечки конфиденциальной информации - *ПРОВЕРКА ВИЗУАЛЬНО, АНАЛИЗ ОТВЕТОВ API*
+        print("  [ПОДТЕСТ] Отсутствие утечки конфиденциальной информации - *ПРОВЕРКА ВРУЧНУЮ, АНАЛИЗ ОТВЕТОВ API*")
+        print("    Инструкция: Проанализируйте ответы API на различные запросы (особенно ошибки и логины) и убедитесь, что они не содержат чувствительных данных, таких как:")
+        print("      - Пароли (в открытом виде или хеши, которые могут быть использованы для взлома).")
+        print("      - Секретные ключи API или токены доступа.")
+        print("      - Детали сессии, которые могут быть использованы для несанкционированного доступа.")
+        print("    В Swagger Petstore в ответах API не должны утекать пароли (см. тест 5.3), но необходимо провести общий анализ ответов на предмет других видов конфиденциальной информации.")
+
+
+    # 7. Проверка масштабируемости и производительности - *ТРЕБУЕТ ДОПОЛНИТЕЛЬНОЙ РЕАЛИЗАЦИИ, НЕОБХОДИМЫ ИНСТРУМЕНТЫ ДЛЯ НАГРУЗОЧНОГО ТЕСТИРОВАНИЯ*
+    def test_scalability_performance(self):
+        print("\n[НАЧАЛО ТЕСТА] Проверка масштабируемости и производительности - *ТРЕБУЕТ ДОПОЛНИТЕЛЬНОЙ РЕАЛИЗАЦИИ И ВНЕШНИХ ИНСТРУМЕНТОВ*")
+        print("  [ПОДТЕСТ] Многопоточное выполнение запросов - *ТРЕБУЕТ РЕАЛИЗАЦИИ МНОГОПОТОЧНОСТИ*")
+        print("    Инструкция: Реализуйте многопоточное выполнение запросов к API (например, с помощью threading или asyncio в Python) и проверьте, как система обрабатывает одновременные обращения.")
+        print("    Нужно измерить:")
+        print("      - Количество запросов в секунду (RPS).")
+        print("      - Время ответа при увеличении количества одновременных запросов.")
+        print("      - Наличие ошибок или сбоев при высокой нагрузке.")
+
+        print("  [ПОДТЕСТ] Тестирование нагрузки - *ТРЕБУЕТ ИНСТРУМЕНТОВ НАГРУЗОЧНОГО ТЕСТИРОВАНИЯ (например, Locust, JMeter)*")
+        print("    Инструкция: Используйте инструменты для нагрузочного тестирования для эмуляции высокой нагрузки на API (например, 100, 500, 1000 одновременных пользователей).")
+        print("    Нужно измерить:")
+        print("      - Время ответа при разной нагрузке.")
+        print("      - Пропускную способность API.")
+        print("      - Ресурсы сервера (CPU, память, сеть) во время нагрузки.")
+        print("      - Моменты, когда система начинает замедляться или выдавать ошибки (предел масштабируемости).")
+
+        print("  [ПОДТЕСТ] Анализ времени ответа - *ТРЕБУЕТ ИЗМЕРЕНИЯ ВРЕМЕНИ ОТВЕТА ДЛЯ РАЗНЫХ ЗАПРОСОВ*")
+        print("    Инструкция: Измерьте время ответа для различных типов запросов (CRUD операции, поиск, логин и т.д.) и проверьте, что оно находится в пределах допустимых значений (например, < 200 мс для критически важных операций, < 1 секунды для остальных).")
+        print("    Нужно провести измерения в разных условиях: при низкой и высокой нагрузке, для разных типов запросов, и т.д.")
+
+
+    # 8. Интеграционные тесты
+    def test_integration_tests(self):
+        print("\n[НАЧАЛО ТЕСТА] Интеграционные тесты")
+
+        # 8.1. Связанные операции: Создание питомца, заказ, удаление питомца
+        print("  [ПОДТЕСТ] Связанные операции: Создание питомца, заказ, удаление питомца")
+
+        # Создаем питомца
+        pet_payload_integration = {
+            "category": {"id": 1, "name": "Hamsters"},
+            "name": "hammy_for_order",
+            "photoUrls": ["string"],
+            "tags": [{"id": 1, "name": "cute"}],
+            "status": "available"
+        }
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(f"{BASE_URL}/pet", headers=headers, data=json.dumps(pet_payload_integration))
+        self.assert_with_message(response.status_code == 200,
+                                 "Питомец для интеграционного теста успешно создан (POST /pet).",
+                                 "Ошибка при создании питомца для интеграционного теста (POST /pet).",
+                                 response.status_code, response.text)
+        integration_pet_id = response.json()['id']
+
+        # Оформляем заказ на питомца
+        order_payload_integration = {
+            "petId": integration_pet_id,
+            "quantity": 1,
+            "shipDate": "2024-01-03T10:10:10.000Z",
+            "status": "placed",
+            "complete": True
+        }
+        response = requests.post(f"{BASE_URL}/store/order", headers=headers, data=json.dumps(order_payload_integration))
+        self.assert_with_message(response.status_code == 200,
+                                 "Заказ на питомца успешно размещен (POST /store/order).",
+                                 "Ошибка при размещении заказа на питомца (POST /store/order).",
+                                 response.status_code, response.text)
+        integration_order_id = response.json()['orderId'] if 'orderId' in response.json() else response.json()['id']
+
+        # Удаляем питомца
+        response = requests.delete(f"{BASE_URL}/pet/{integration_pet_id}")
+        self.assert_with_message(response.status_code == 200,
+                                 "Питомец успешно удален (DELETE /pet/{integration_pet_id}).",
+                                 "Ошибка при удалении питомца (DELETE /pet/{integration_pet_id}).",
+                                 response.status_code, response.text)
+
+        # Проверяем, что заказ все еще существует (заказ не должен удаляться при удалении питомца, это разные сущности)
+        response = requests.get(f"{BASE_URL}/store/order/{integration_order_id}")
+        self.assert_with_message(response.status_code == 200,
+                                 "Заказ все еще доступен после удаления питомца (GET /store/order/{integration_order_id}).",
+                                 "Заказ не доступен после удаления питомца (ОШИБКА ИНТЕГРАЦИИ!).",
+                                 response.status_code, response.text)
+        response_json = response.json()
+        self.assert_with_message(str(response_json['petId']) == str(integration_pet_id), # petId в заказе должен соответствовать удаленному petId
+                                 "ID питомца в заказе соответствует удаленному питомцу.",
+                                 "ID питомца в заказе не соответствует удаленному питомцу (ОШИБКА ИНТЕГРАЦИИ!).",
+                                 response.status_code, response.text)
+
+        # Очистка: удаляем заказ, чтобы не засорять базу тестовыми данными
+        requests.delete(f"{BASE_URL}/store/order/{integration_order_id}")
+
+
+if __name__ == '__main__':
+    unittest.main()
+
+

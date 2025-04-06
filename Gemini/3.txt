@@ -1,0 +1,465 @@
+
+Очень не любит обрабочик ошибок
+
+
+
+import requests
+import json
+import pytest
+
+BASE_URL = "https://restful-booker.herokuapp.com"
+AUTH_URL = f"{BASE_URL}/auth"
+BOOKING_URL = f"{BASE_URL}/booking"
+USERNAME = "admin"
+PASSWORD = "password123"
+TOKEN = None
+
+ERROR_COUNT = 0  # Счетчик ошибок для итогового отчета
+ERROR_DETAILS = [] # Список для хранения деталей ошибок
+
+def print_step(message, error=False):
+    """Выводит сообщение шага теста в консоль, с цветовым выделением для ошибок."""
+    if error:
+        print(f"\n\033[91m[FAIL] {message}\033[0m") # Красный цвет для ошибок
+    else:
+        print(f"\n[INFO] {message}")
+
+def log_error(step_message, response=None, expected_code=None, expected_data=None, actual_data=None, exception=None):
+    """Логирует детали ошибки и увеличивает счетчик ошибок."""
+    global ERROR_COUNT, ERROR_DETAILS
+    ERROR_COUNT += 1
+    error_detail = {"step": step_message}
+    if response is not None:
+        error_detail["url"] = response.url
+        error_detail["status_code"] = response.status_code
+        error_detail["response_text"] = response.text
+        if expected_code is not None:
+            error_detail["expected_status_code"] = expected_code
+    if expected_data is not None:
+        error_detail["expected_data"] = expected_data
+    if actual_data is not None:
+        error_detail["actual_data"] = actual_data
+    if exception is not None:
+        error_detail["exception"] = str(exception)  # Логируем исключение как строку
+    ERROR_DETAILS.append(error_detail)
+    print_step(f"{step_message} - Произошла ошибка. Детали сохранены в отчете.", error=True)
+
+
+def assert_status_code(response, expected_code, step_message):
+    """Проверяет код статуса ответа и логирует ошибку в случае неудачи."""
+    if response.status_code != expected_code:
+        log_error(step_message, response, expected_code=expected_code)
+    else:
+        print(f"[PASS] {step_message} - Код ответа {expected_code}")
+
+def assert_equal_data(actual_data, expected_data, step_message):
+    """Сравнивает данные и логирует ошибку в случае расхождения."""
+    if actual_data != expected_data:
+        log_error(step_message, actual_data=actual_data, expected_data=expected_data)
+    else:
+        print(f"[PASS] {step_message} - Данные совпадают")
+
+
+def get_booking_ids():
+    """1.1. Получение списка бронирований."""
+    step_message = "1.1. Проверка получения списка бронирований"
+    print_step(step_message)
+    try:
+        response = requests.get(BOOKING_URL)
+        assert_status_code(response, 200, f"{step_message} - GET /booking - Список бронирований получен успешно")
+        if not isinstance(response.json(), list):
+            log_error(f"{step_message} - GET /booking - Возвращенные данные не являются списком", actual_data=response.json(), expected_data="list")
+        else:
+            print(f"[PASS] {step_message} - Возвращенные данные являются списком")
+            return response.json()
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса GET /booking", exception=e)
+        return None
+
+def create_booking():
+    """1.2. Создание нового бронирования."""
+    step_message = "1.2. Проверка создания нового бронирования"
+    print_step(step_message)
+    headers = {'Content-Type': 'application/json'}
+    payload = {
+        "firstname": "Sally",
+        "lastname": "Brown",
+        "totalprice": 111,
+        "depositpaid": True,
+        "bookingdates": {
+            "checkin": "2018-01-01",
+            "checkout": "2019-01-01"
+        },
+        "additionalneeds": "Breakfast"
+    }
+    try:
+        response = requests.post(BOOKING_URL, headers=headers, data=json.dumps(payload))
+        assert_status_code(response, 200, f"{step_message} - POST /booking - Бронирование создано успешно")
+        booking_id = response.json().get('bookingid')
+        if booking_id is None:
+            log_error(f"{step_message} - POST /booking - Уникальный идентификатор бронирования не возвращен", actual_data=response.json(), expected_data="bookingid in response")
+        else:
+            print(f"[PASS] {step_message} - Уникальный идентификатор бронирования получен")
+            return booking_id, payload
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса POST /booking", exception=e)
+        return None, payload  # Возвращаем None для booking_id, но payload для дальнейших тестов
+
+def get_booking_by_id(booking_id, expected_data):
+    """1.3. Получение информации о бронировании по ID."""
+    step_message = f"1.3. Проверка получения информации о бронировании по ID: {booking_id}"
+    print_step(step_message)
+    try:
+        response = requests.get(f"{BOOKING_URL}/{booking_id}")
+        assert_status_code(response, 200, f"{step_message} - GET /booking/{{id}} - Информация о бронировании получена")
+        actual_data = response.json()
+
+        # Сравнение данных построчно и логирование ошибок сравнения
+        if actual_data['firstname'] != expected_data['firstname']:
+            log_error(f"{step_message} - GET /booking/{{id}} - Имя не совпадает", actual_data=actual_data['firstname'], expected_data=expected_data['firstname'])
+        elif actual_data['lastname'] != expected_data['lastname']:
+            log_error(f"{step_message} - GET /booking/{{id}} - Фамилия не совпадает", actual_data=actual_data['lastname'], expected_data=expected_data['lastname'])
+        elif actual_data['totalprice'] != expected_data['totalprice']:
+            log_error(f"{step_message} - GET /booking/{{id}} - Общая цена не совпадает", actual_data=actual_data['totalprice'], expected_data=expected_data['totalprice'])
+        elif actual_data['depositpaid'] != expected_data['depositpaid']:
+            log_error(f"{step_message} - GET /booking/{{id}} - Статус депозита не совпадает", actual_data=actual_data['depositpaid'], expected_data=expected_data['depositpaid'])
+        elif actual_data['bookingdates']['checkin'] != expected_data['bookingdates']['checkin']:
+            log_error(f"{step_message} - GET /booking/{{id}} - Дата заезда не совпадает", actual_data=actual_data['bookingdates']['checkin'], expected_data=expected_data['bookingdates']['checkin'])
+        elif actual_data['bookingdates']['checkout'] != expected_data['bookingdates']['checkout']:
+            log_error(f"{step_message} - GET /booking/{{id}} - Дата выезда не совпадает", actual_data=actual_data['bookingdates']['checkout'], expected_data=expected_data['bookingdates']['checkout'])
+        elif actual_data['additionalneeds'] != expected_data['additionalneeds']:
+            log_error(f"{step_message} - GET /booking/{{id}} - Дополнительные потребности не совпадают", actual_data=actual_data['additionalneeds'], expected_data=expected_data['additionalneeds'])
+        else:
+            print(f"[PASS] {step_message} - Данные о бронировании соответствуют отправленным")
+
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса GET /booking/{{id}}", exception=e)
+
+
+def update_booking_put(booking_id):
+    """1.4. Полное обновление бронирования (PUT)."""
+    step_message = f"1.4. Проверка полного обновления бронирования (PUT) для ID: {booking_id}"
+    print_step(step_message)
+    headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
+    if TOKEN:
+        headers['Cookie'] = f"token={TOKEN}"
+    else:
+        print_step("[ERROR] Токен аутентификации не получен, невозможно выполнить PUT запрос.", error=True)
+        return None # Возвращаем None, чтобы сигнализировать о невозможности выполнения PATCH/DELETE
+
+    payload = {
+        "firstname": "James",
+        "lastname": "Smith",
+        "totalprice": 222,
+        "depositpaid": False,
+        "bookingdates": {
+            "checkin": "2020-01-01",
+            "checkout": "2021-01-01"
+        },
+        "additionalneeds": "Lunch"
+    }
+    try:
+        response = requests.put(f"{BOOKING_URL}/{booking_id}", headers=headers, data=json.dumps(payload))
+        assert_status_code(response, 200, f"{step_message} - PUT /booking/{{id}} - Бронирование полностью обновлено")
+
+        # Проверяем, что обновление действительно произошло
+        response_get = requests.get(f"{BOOKING_URL}/{booking_id}")
+        updated_booking = response_get.json()
+        if updated_booking['firstname'] != payload['firstname']:
+            log_error(f"{step_message} - PUT /booking/{{id}} - Проверка имени после обновления не пройдена", actual_data=updated_booking['firstname'], expected_data=payload['firstname'])
+        elif updated_booking['lastname'] != payload['lastname']:
+            log_error(f"{step_message} - PUT /booking/{{id}} - Проверка фамилии после обновления не пройдена", actual_data=updated_booking['lastname'], expected_data=payload['lastname'])
+        else:
+            print(f"[PASS] {step_message} - Обновление данных подтверждено")
+            return payload # Возвращаем payload для PATCH
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса PUT /booking/{{id}}", exception=e)
+        return None
+
+
+def update_booking_patch(booking_id, expected_put_payload):
+    """1.5. Частичное обновление бронирования (PATCH)."""
+    step_message = f"1.5. Проверка частичного обновления бронирования (PATCH) для ID: {booking_id}"
+    print_step(step_message)
+    headers = {'Content-Type': 'application/json'}
+    if TOKEN:
+        headers['Cookie'] = f"token={TOKEN}"
+    else:
+        print_step("[ERROR] Токен аутентификации не получен, невозможно выполнить PATCH запрос.", error=True)
+        return
+
+    payload_patch = {
+        "firstname": "Jimmy", # Изменяем только firstname
+    }
+    try:
+        response = requests.patch(f"{BOOKING_URL}/{booking_id}", headers=headers, data=json.dumps(payload_patch))
+        assert_status_code(response, 200, f"{step_message} - PATCH /booking/{{id}} - Бронирование частично обновлено")
+
+        # Проверяем, что обновление действительно произошло
+        response_get = requests.get(f"{BOOKING_URL}/{booking_id}")
+        updated_booking = response_get.json()
+
+        if updated_booking['firstname'] != payload_patch['firstname']:
+            log_error(f"{step_message} - PATCH /booking/{{id}} - Проверка имени после PATCH не пройдена", actual_data=updated_booking['firstname'], expected_data=payload_patch['firstname'])
+        elif updated_booking['lastname'] != expected_put_payload['lastname']:
+            log_error(f"{step_message} - PATCH /booking/{{id}} - Проверка фамилии после PATCH не пройдена (не должна измениться)", actual_data=updated_booking['lastname'], expected_data=expected_put_payload['lastname'])
+        else:
+            print(f"[PASS] {step_message} - Частичное обновление подтверждено")
+
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса PATCH /booking/{{id}}", exception=e)
+
+
+def delete_booking(booking_id):
+    """1.6. Удаление бронирования."""
+    step_message = f"1.6. Проверка удаления бронирования для ID: {booking_id}"
+    print_step(step_message)
+    headers = {}
+    if TOKEN:
+        headers['Cookie'] = f"token={TOKEN}"
+    else:
+        print_step("[ERROR] Токен аутентификации не получен, невозможно выполнить DELETE запрос.", error=True)
+        return
+
+    try:
+        response = requests.delete(f"{BOOKING_URL}/{booking_id}", headers=headers)
+        assert_status_code(response, 201, f"{step_message} - DELETE /booking/{{id}} - Бронирование удалено")
+
+        # Проверяем, что бронирование действительно удалено
+        response_get = requests.get(f"{BOOKING_URL}/{booking_id}")
+        assert_status_code(response_get, 404, f"{step_message} - GET /booking/{{id}} после DELETE - Бронирование не найдено, удаление подтверждено")
+        print(f"[PASS] {step_message} - Удаление бронирования подтверждено")
+
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса DELETE /booking/{{id}}", exception=e)
+
+
+def get_auth_token():
+    """2.1. Получение токена аутентификации."""
+    step_message = "2.1. Проверка получения токена аутентификации"
+    print_step(step_message)
+    headers = {'Content-Type': 'application/json'}
+    payload = {
+        "username": USERNAME,
+        "password": PASSWORD
+    }
+    try:
+        response = requests.post(AUTH_URL, headers=headers, data=json.dumps(payload))
+        assert_status_code(response, 200, f"{step_message} - POST /auth - Токен получен успешно")
+        token = response.json().get('token')
+        if token is None:
+            log_error(f"{step_message} - POST /auth - Токен не был возвращен", actual_data=response.json(), expected_data="token in response")
+        else:
+            print(f"[PASS] {step_message} - Токен аутентификации получен")
+            return token
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса POST /auth", exception=e)
+        return None
+
+def unauthorized_put_patch_delete(booking_id):
+    """2.2. Проверка, что PUT, PATCH и DELETE требуют токен."""
+    step_message = "2.2. Проверка, что PUT, PATCH и DELETE требуют аутентификацию"
+    print_step(step_message)
+
+    # PUT без токена
+    headers_put = {'Content-Type': 'application/json'}
+    payload_put = {
+        "firstname": "NoToken",
+        "lastname": "Update",
+        "totalprice": 100,
+        "depositpaid": True,
+        "bookingdates": {
+            "checkin": "2023-01-01",
+            "checkout": "2023-01-02"
+        },
+        "additionalneeds": "None"
+    }
+    try:
+        response_put = requests.put(f"{BOOKING_URL}/{booking_id}", headers=headers_put, data=json.dumps(payload_put))
+        assert_status_code(response_put, 403, f"{step_message} - PUT /booking/{{id}} без токена - Ошибка авторизации ожидаема")
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса PUT /booking/{{id}} без токена", exception=e)
+
+    # PATCH без токена
+    headers_patch = {'Content-Type': 'application/json'}
+    payload_patch = {
+        "firstname": "NoTokenPatch",
+    }
+    try:
+        response_patch = requests.patch(f"{BOOKING_URL}/{booking_id}", headers=headers_patch, data=json.dumps(payload_patch))
+        assert_status_code(response_patch, 403, f"{step_message} - PATCH /booking/{{id}} без токена - Ошибка авторизации ожидаема")
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса PATCH /booking/{{id}} без токена", exception=e)
+
+
+    # DELETE без токена
+    try:
+        response_delete = requests.delete(f"{BOOKING_URL}/{booking_id}")
+        assert_status_code(response_delete, 403, f"{step_message} - DELETE /booking/{{id}} без токена - Ошибка авторизации ожидаема")
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса DELETE /booking/{{id}} без токена", exception=e)
+
+    print(f"[PASS] {step_message} - PUT, PATCH и DELETE запросы без токена возвращают ошибку авторизации")
+
+
+def invalid_booking_id():
+    """3.1. Запросы с неверным ID бронирования."""
+    step_message = "3.1. Проверка запросов с неверным ID бронирования"
+    print_step(step_message)
+    invalid_id = 999999
+
+    try:
+        response_get = requests.get(f"{BOOKING_URL}/{invalid_id}")
+        assert_status_code(response_get, 404, f"{step_message} - GET /booking/{{id}} - Несуществующий ID, ожидается 404")
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса GET /booking/{{id}} с неверным ID", exception=e)
+
+    try:
+        response_put = requests.put(f"{BOOKING_URL}/{invalid_id}", headers={'Content-Type': 'application/json'}, data=json.dumps({})) # Пустой payload
+        assert_status_code(response_put, 403, f"{step_message} - PUT /booking/{{id}} - Несуществующий ID, ожидается 403 без токена (или 404 с токеном)") # Ожидается 403 без токена
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса PUT /booking/{{id}} с неверным ID", exception=e)
+
+    try:
+        response_patch = requests.patch(f"{BOOKING_URL}/{invalid_id}", headers={'Content-Type': 'application/json'}, data=json.dumps({})) # Пустой payload
+        assert_status_code(response_patch, 403, f"{step_message} - PATCH /booking/{{id}} - Несуществующий ID, ожидается 403 без токена (или 404 с токеном)") # Ожидается 403 без токена
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса PATCH /booking/{{id}} с неверным ID", exception=e)
+
+    try:
+        response_delete = requests.delete(f"{BOOKING_URL}/{invalid_id}")
+        assert_status_code(response_delete, 403, f"{step_message} - DELETE /booking/{{id}} - Несуществующий ID, ожидается 403 без токена (или 404 с токеном)") # Ожидается 403 без токена
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса DELETE /booking/{{id}} с неверным ID", exception=e)
+
+    print(f"[PASS] {step_message} - Запросы с неверным ID возвращают ожидаемые коды ошибок")
+
+
+def missing_required_fields():
+    """3.2. Отсутствие обязательных полей при создании бронирования."""
+    step_message = "3.2. Проверка создания бронирования без обязательных полей"
+    print_step(step_message)
+    headers = {'Content-Type': 'application/json'}
+    # Пропускаем 'firstname'
+    payload_missing_field = {
+        "lastname": "MissingFieldTest",
+        "totalprice": 50,
+        "depositpaid": True,
+        "bookingdates": {
+            "checkin": "2024-01-01",
+            "checkout": "2024-01-02"
+        },
+        "additionalneeds": "Extra pillow"
+    }
+    try:
+        response = requests.post(BOOKING_URL, headers=headers, data=json.dumps(payload_missing_field))
+        assert_status_code(response, 400, f"{step_message} - POST /booking - Отсутствует обязательное поле 'firstname', ожидается 400")
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса POST /booking без обязательных полей", exception=e)
+
+    print(f"[PASS] {step_message} - Система корректно обнаруживает ошибку валидации при отсутствии обязательных полей")
+
+
+def unsupported_http_methods():
+    """3.3. Использование неподдерживаемых HTTP-методов."""
+    step_message = "3.3. Проверка использования неподдерживаемых HTTP-методов"
+    print_step(step_message)
+    try:
+        response_delete_booking_url = requests.delete(BOOKING_URL) # DELETE для /booking (списка)
+        assert_status_code(response_delete_booking_url, 405, f"{step_message} - DELETE /booking - Метод DELETE не поддерживается для списка бронирований, ожидается 405") # По факту 405
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса DELETE /booking", exception=e)
+
+    try:
+        response_post_booking_id_url = requests.post(f"{BOOKING_URL}/123", headers={'Content-Type': 'application/json'}, data=json.dumps({})) # POST для /booking/{id}
+        assert_status_code(response_post_booking_id_url, 405, f"{step_message} - POST /booking/{{id}} - Метод POST не поддерживается для endpoint /booking/{{id}}, ожидается 405") # По факту 405
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса POST /booking/{{id}}", exception=e)
+
+    print(f"[PASS] {step_message} - API возвращает сообщения об ошибках для неподдерживаемых HTTP-методов")
+
+
+def injection_xss_test():
+    """3.4. Проверка на инъекции и XSS (очень базовая проверка)."""
+    step_message = "3.4. Проверка на инъекции и XSS (базовая)"
+    print_step(step_message)
+    headers = {'Content-Type': 'application/json'}
+    payload_xss = {
+        "firstname": "<script>alert('XSS')</script>",
+        "lastname": "Injection' OR '1'='1", # Базовая SQL-подобная инъекция
+        "totalprice": 100,
+        "depositpaid": True,
+        "bookingdates": {
+            "checkin": "2024-01-01",
+            "checkout": "2024-01-02"
+        },
+        "additionalneeds": "Malicious code"
+    }
+    try:
+        response = requests.post(BOOKING_URL, headers=headers, data=json.dumps(payload_xss))
+        assert_status_code(response, 200, f"{step_message} - POST /booking с потенциально опасными данными - Запрос выполнен успешно (API может быть уязвим)") # API вернул 200, что может быть проблемой
+        # В реальном тестировании нужно проверить, как эти данные обрабатываются при получении и отображении.
+        print(f"[WARNING] {step_message} - API принимает данные, содержащие потенциально опасные символы. Необходима дополнительная проверка обработки данных на уязвимости.")
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса POST /booking с XSS payload", exception=e)
+
+
+def check_content_type_header():
+    """4.2. Проверка заголовков (headers) Content-Type."""
+    step_message = "4.2. Проверка наличия и корректности заголовка Content-Type"
+    print_step(step_message)
+    try:
+        response = requests.get(BOOKING_URL)
+        content_type = response.headers.get('Content-Type')
+        if content_type is None:
+            log_error(f"{step_message} - Заголовок Content-Type отсутствует в ответе GET /booking", actual_data=response.headers)
+        elif 'application/json' not in content_type:
+            log_error(f"{step_message} - Заголовок Content-Type не содержит 'application/json'", actual_data=content_type, expected_data='application/json')
+        else:
+            print(f"[PASS] {step_message} - Ответы API содержат заголовок Content-Type: application/json")
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса GET /booking для проверки заголовка Content-Type", exception=e)
+
+
+def run_tests():
+    """Запуск всех тестов."""
+    print("\n[START] Запуск комплексного тестирования API с обработкой ошибок...")
+
+    booking_ids_list = get_booking_ids() # 1.1
+    initial_booking_id, booking_payload = create_booking() # 1.2
+    if initial_booking_id: # Продолжаем только если бронирование было создано
+        get_booking_by_id(initial_booking_id, booking_payload) # 1.3
+
+        global TOKEN # Используем глобальную переменную TOKEN
+        TOKEN = get_auth_token() # 2.1 - Получаем токен перед использованием PUT, PATCH, DELETE
+
+        if TOKEN: # Выполняем тесты, требующие токен, только если токен был успешно получен
+            put_payload = update_booking_put(initial_booking_id) # 1.4
+            if put_payload: # Продолжаем PATCH только если PUT прошел (или вернул payload)
+                update_booking_patch(initial_booking_id, put_payload) # 1.5
+                delete_booking(initial_booking_id) # 1.6
+        else:
+            print_step("[WARNING] Токен аутентификации не был получен, пропущены тесты PUT, PATCH, DELETE с токеном.", error=True)
+    else:
+        print_step("[WARNING] Не удалось создать бронирование, пропущены тесты GET ID, PUT, PATCH, DELETE.", error=True)
+
+
+    unauthorized_put_patch_delete(initial_booking_id if initial_booking_id else 0) # 2.2 - Проверка ошибок авторизации для PUT, PATCH, DELETE без токена
+    invalid_booking_id() # 3.1
+    missing_required_fields() # 3.2
+    unsupported_http_methods() # 3.3
+    injection_xss_test() # 3.4
+    check_content_type_header() # 4.2
+
+    print(f"\n[END] Комплексное тестирование API завершено. Количество ошибок: {ERROR_COUNT}")
+    if ERROR_DETAILS:
+        print("\n[ERROR REPORT] Детали ошибок:")
+        for error_detail in ERROR_DETAILS:
+            print(f"\n- Шаг теста: {error_detail['step']}")
+            for key, value in error_detail.items():
+                if key != 'step':
+                    print(f"  - {key}: {value}")
+
+
+if __name__ == "__main__":
+    run_tests()

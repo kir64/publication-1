@@ -1,0 +1,179 @@
+
+
+import requests
+import json
+import time
+
+BASE_URL = "https://petstore.swagger.io/v2"
+
+def colored(text, color_code):
+    return f"\033[{color_code}m{text}\033[0m"
+
+def assert_with_message(condition, message, status_code=None):
+    if status_code:
+        message += f" (Status Code: {status_code})"
+    try:
+        assert condition, colored(message, "91")
+        print(colored(message, "92"))
+    except AssertionError as e:
+        print(colored(e, "91"))
+        raise
+
+def create_pet(pet_data):
+    response = requests.post(f"{BASE_URL}/pet", json=pet_data)
+    assert_with_message(response.status_code in [200, 201], "Pet creation failed", response.status_code)
+    return response.json()
+
+def get_pet(pet_id):
+    response = requests.get(f"{BASE_URL}/pet/{pet_id}")
+    return response
+
+def update_pet(pet_data):
+    response = requests.put(f"{BASE_URL}/pet", json=pet_data)
+    assert_with_message(response.status_code == 200, "Pet update failed", response.status_code)
+    return response.json()
+
+def delete_pet(pet_id):
+    response = requests.delete(f"{BASE_URL}/pet/{pet_id}")
+    return response
+
+def create_order(order_data):
+    response = requests.post(f"{BASE_URL}/store/order", json=order_data)
+    assert_with_message(response.status_code == 200, "Order creation failed", response.status_code)
+    return response.json()
+
+def get_order(order_id):
+    response = requests.get(f"{BASE_URL}/store/order/{order_id}")
+    return response
+
+def delete_order(order_id):
+    response = requests.delete(f"{BASE_URL}/store/order/{order_id}")
+    return response
+
+def create_user(user_data):
+    response = requests.post(f"{BASE_URL}/user", json=user_data)
+    assert_with_message(response.status_code == 200, "User creation failed", response.status_code)
+    return response.json()
+
+def get_user(username):
+    response = requests.get(f"{BASE_URL}/user/{username}")
+    return response
+
+def update_user(username, user_data):
+    response = requests.put(f"{BASE_URL}/user/{username}", json=user_data)
+    assert_with_message(response.status_code == 200, "User update failed", response.status_code)
+    return response.json()
+
+def delete_user(username):
+    response = requests.delete(f"{BASE_URL}/user/{username}")
+    return response
+
+def test_pet_operations():
+    pet_data = {
+        "id": 12345,
+        "name": "TestPet",
+        "category": {"name": "TestCategory"},
+        "status": "available"
+    }
+
+    # Создание питомца
+    created_pet = create_pet(pet_data)
+    time.sleep(1)
+    assert_with_message(created_pet["id"] == pet_data["id"], "Pet creation: ID mismatch")
+    assert_with_message(created_pet["name"] == pet_data["name"], "Pet creation: Name mismatch")
+
+    # Получение питомца
+    retrieved_pet = get_pet(pet_data["id"]).json()
+    time.sleep(1)
+    assert_with_message(retrieved_pet == created_pet, "Pet retrieval: Data mismatch")
+
+    # Обновление питомца
+    updated_pet_data = pet_data.copy()
+    updated_pet_data["name"] = "UpdatedTestPet"
+    updated_pet = update_pet(updated_pet_data)
+    time.sleep(1)
+    assert_with_message(updated_pet["name"] == updated_pet_data["name"], "Pet update: Name mismatch")
+
+    # Удаление питомца
+    delete_pet(pet_data["id"])
+    time.sleep(1)
+    assert_with_message(get_pet(pet_data["id"]).status_code == 404, "Pet deletion: Pet still exists")
+
+def test_order_operations():
+    order_data = {
+        "id": 10,
+        "petId": 12345,
+        "quantity": 1,
+        "shipDate": "2023-10-27T10:00:00.000+0000",
+        "status": "placed",
+        "complete": True
+    }
+
+    # Создание заказа
+    created_order = create_order(order_data)
+    time.sleep(1)
+    assert_with_message(created_order["id"] == order_data["id"], "Order creation: ID mismatch")
+
+    # Получение заказа
+    retrieved_order = get_order(order_data["id"]).json()
+    time.sleep(1)
+    assert_with_message(retrieved_order == created_order, "Order retrieval: Data mismatch")
+
+    # Удаление заказа
+    delete_order(order_data["id"])
+    time.sleep(1)
+    assert_with_message(get_order(order_data["id"]).status_code == 404, "Order deletion: Order still exists")
+
+def test_user_operations():
+    user_data = {
+        "id": 12345,
+        "username": "testuser",
+        "firstName": "Test",
+        "lastName": "User",
+        "email": "test@example.com",
+        "password": "password",
+        "phone": "1234567890",
+        "userStatus": 0
+    }
+
+    # Создание пользователя
+    create_user(user_data)
+    time.sleep(1)
+    retrieved_user = get_user(user_data["username"]).json()
+    time.sleep(1)
+    assert_with_message(retrieved_user["username"] == user_data["username"], "User creation: Username mismatch")
+
+    # Обновление пользователя
+    updated_user_data = user_data.copy()
+    updated_user_data["firstName"] = "UpdatedTest"
+    update_user(user_data["username"], updated_user_data)
+    time.sleep(1)
+    retrieved_updated_user = get_user(user_data["username"]).json()
+    time.sleep(1)
+    assert_with_message(retrieved_updated_user["firstName"] == updated_user_data["firstName"], "User update: First name mismatch")
+
+    # Удаление пользователя
+    delete_user(user_data["username"])
+    time.sleep(1)
+    assert_with_message(get_user(user_data["username"]).status_code == 404, "User deletion: User still exists")
+
+def test_negative_scenarios():
+    # Попытка получить несуществующего питомца
+    assert_with_message(get_pet(99999).status_code == 404, "Negative scenario: Non-existent pet")
+    time.sleep(1)
+    # Попытка получить несуществующий заказ
+    assert_with_message(get_order(99999).status_code == 404, "Negative scenario: Non-existent order")
+    time.sleep(1)
+    # Попытка получить несуществующего пользователя
+    assert_with_message(get_user("nonexistentuser").status_code == 404, "Negative scenario: Non-existent user")
+    time.sleep(1)
+
+    # Запрос с некорректными данными (например, отсутствующее имя питомца)
+    invalid_pet_data = {"id": 12346, "category": {"name": "InvalidCategory"}, "status": "available"}
+    response = requests.post(f"{BASE_URL}/pet", json=invalid_pet_data)
+    assert_with_message(response.status_code == 400, "Negative scenario: Invalid pet data", response.status_code)
+
+if __name__ == "__main__":
+    test_pet_operations()
+    test_user_operations()
+    test_negative_scenarios()
