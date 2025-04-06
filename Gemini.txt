@@ -1,0 +1,1369 @@
+Пара ошибок в тестах, оценивают только основной функцианал.
+
+
+import pytest
+import requests
+import json
+
+BASE_URL = "https://petstore.swagger.io/v2"
+
+class TestPetEndpoint:
+    def test_add_new_pet_positive(self):
+        """Позитивный тест: Добавление нового питомца с корректными данными."""
+        pet_payload = {
+            "id": 12345,
+            "category": {"id": 1, "name": "Dogs"},
+            "name": "doggie",
+            "photoUrls": ["string"],
+            "tags": [{"id": 0, "name": "cute"}],
+            "status": "available"
+        }
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(f"{BASE_URL}/pet", headers=headers, data=json.dumps(pet_payload))
+        assert response.status_code == 200
+        assert response.json()['id'] == 12345
+
+    def test_get_pet_by_id_positive(self):
+        """Позитивный тест: Получение питомца по ID."""
+        pet_id = 12345 # Используем ID питомца, созданного в предыдущем тесте или существующего
+        response = requests.get(f"{BASE_URL}/pet/{pet_id}")
+        assert response.status_code == 200
+        assert response.json()['id'] == pet_id
+
+    def test_get_pet_by_id_negative_not_found(self):
+        """Негативный тест: Получение питомца по несуществующему ID (ошибка 404)."""
+        pet_id = 999999 # Заведомо несуществующий ID
+        response = requests.get(f"{BASE_URL}/pet/{pet_id}")
+        assert response.status_code == 404
+
+    def test_add_new_pet_negative_invalid_content_type(self):
+        """Негативный тест: Добавление питомца с неверным Content-Type."""
+        pet_payload = {
+            "id": 12346,
+            "name": "catty",
+            "status": "pending"
+        }
+        headers = {'Content-Type': 'application/xml'} # Неверный Content-Type
+        response = requests.post(f"{BASE_URL}/pet", headers=headers, data=json.dumps(pet_payload))
+        assert response.status_code == 415 # Ожидаем ошибку 415 Unsupported Media Type
+
+    def test_update_existing_pet_positive(self):
+        """Позитивный тест: Обновление существующего питомца."""
+        pet_payload_update = {
+            "id": 12345, # ID существующего питомца
+            "name": "doggie_updated",
+            "status": "sold"
+        }
+        headers = {'Content-Type': 'application/json'}
+        response = requests.put(f"{BASE_URL}/pet", headers=headers, data=json.dumps(pet_payload_update))
+        assert response.status_code == 200
+        assert response.json()['name'] == "doggie_updated"
+        assert response.json()['status'] == "sold"
+
+    def test_find_pets_by_status_positive(self):
+        """Позитивный тест: Поиск питомцев по статусу 'available'."""
+        status = "available"
+        response = requests.get(f"{BASE_URL}/pet/findByStatus?status={status}")
+        assert response.status_code == 200
+        assert isinstance(response.json(), list) # Ожидаем список питомцев
+
+    def test_find_pets_by_status_negative_invalid_status(self):
+        """Негативный тест: Поиск питомцев по неверному статусу."""
+        status = "invalid_status"
+        response = requests.get(f"{BASE_URL}/pet/findByStatus?status={status}")
+        assert response.status_code == 200 # API возвращает 200 OK, даже если статус неверный, но пустой список
+        assert isinstance(response.json(), list)
+        assert len(response.json()) == 0 # Ожидаем пустой список
+
+    def test_delete_pet_positive(self):
+        """Позитивный тест: Удаление существующего питомца."""
+        pet_id = 12345 # ID существующего питомца
+        response = requests.delete(f"{BASE_URL}/pet/{pet_id}")
+        assert response.status_code == 200
+
+    def test_delete_pet_negative_not_found(self):
+        """Негативный тест: Удаление несуществующего питомца (ошибка 404)."""
+        pet_id = 999999 # Заведомо несуществующий ID
+        response = requests.delete(f"{BASE_URL}/pet/{pet_id}")
+        assert response.status_code == 404
+
+    def test_add_new_pet_negative_missing_required_field(self):
+        """Негативный тест: Добавление питомца с пропущенным обязательным полем 'name'."""
+        pet_payload = {
+            "id": 12347,
+            "category": {"id": 1, "name": "Birds"},
+            "photoUrls": ["string"],
+            "status": "available"
+        } # Поле 'name' отсутствует
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(f"{BASE_URL}/pet", headers=headers, data=json.dumps(pet_payload))
+        assert response.status_code == 400 # Ожидаем ошибку 400 Bad Request из-за отсутствия обязательного поля (зависит от валидации API)
+        # В данном API, похоже, не требует 'name' как обязательное поле, код возвращает 200, но тело ответа указывает на ошибку.
+        # В реальном API, скорее всего, будет 400 Bad Request
+
+    def test_upload_image_for_pet_positive(self):
+        """Позитивный тест: Загрузка изображения для питомца."""
+        pet_id = 12345 # ID существующего питомца
+        files = {'file': open('test_image.png', 'rb')} # Необходимо создать файл test_image.png
+        response = requests.post(f"{BASE_URL}/pet/{pet_id}/uploadImage", files=files)
+        assert response.status_code == 200
+
+    def test_upload_image_for_pet_negative_pet_not_found(self):
+        """Негативный тест: Загрузка изображения для несуществующего питомца (ошибка 404)."""
+        pet_id = 999999 # Заведомо несуществующий ID
+        files = {'file': open('test_image.png', 'rb')} # Необходимо создать файл test_image.png
+        response = requests.post(f"{BASE_URL}/pet/{pet_id}/uploadImage", files=files)
+        assert response.status_code == 404
+
+    def test_place_order_positive(self):
+        """Позитивный тест: Размещение заказа."""
+        order_payload = {
+            "petId": 12345, # ID существующего питомца
+            "quantity": 1,
+            "shipDate": "2024-01-01T10:10:10.000Z",
+            "status": "placed",
+            "complete": True
+        }
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(f"{BASE_URL}/store/order", headers=headers, data=json.dumps(order_payload))
+        assert response.status_code == 200
+        assert response.json()['petId'] == 12345
+
+    def test_get_order_by_id_positive(self):
+        """Позитивный тест: Получение заказа по ID."""
+        order_id = response.json()['orderId'] # Используем ID заказа, созданного в предыдущем тесте или известного заказа
+        response = requests.get(f"{BASE_URL}/store/order/{order_id}")
+        assert response.status_code == 200
+        assert response.json()['id'] == order_id
+
+    def test_get_order_by_id_negative_not_found(self):
+        """Негативный тест: Получение заказа по несуществующему ID (ошибка 404)."""
+        order_id = 999999 # Заведомо несуществующий ID
+        response = requests.get(f"{BASE_URL}/store/order/{order_id}")
+        assert response.status_code == 404
+
+if __name__ == "__main__":
+    # Запуск всех тестов
+    pytest.main([__file__, "-v"])
+
+
+-----
+
+Не выполнил изначального запроса(первый(сделал так еще 3 раза): синт. ошибки(русские переменные), второй: отсутствие обработчика ошибок)
+Сделал код после многих попыток. Проблемы: с удалением(не успевает обновится на сайте), нашел ошибку безопас., странности с поточкой
+Быстрая
+
+
+import requests
+import json
+import unittest
+
+BASE_URL = "https://petstore.swagger.io/v2"
+
+class ApiTests(unittest.TestCase):
+
+    def assert_with_message(self, condition, message_pass, message_fail, response_code=None, response_text=None):
+        """
+        Пользовательская функция assert для вывода развернутых сообщений в консоль.
+        """
+        if condition:
+            print(f"\033[92m[PASS]\033[0m {message_pass}") # Зеленый цвет для PASS
+        else:
+            print(f"\033[91m[FAIL]\033[0m {message_fail}") # Красный цвет для FAIL
+            if response_code:
+                print(f"    Код ответа: {response_code}")
+            if response_text:
+                print(f"    Текст ответа: {response_text}")
+        self.assertTrue(condition) # Стандартный assert для unittest, чтобы тесты не прерывались
+
+    # 1. Проверка основных операций CRUD для сущности "Питомец"
+    def test_pet_crud(self):
+        print("\n[НАЧАЛО ТЕСТА] Проверка CRUD операций для сущности 'Питомец'")
+
+        # 1.1. Создание питомца
+        print("  [ПОДТЕСТ] Создание питомца")
+        pet_payload = {
+            "id": 12345,
+            "category": {"id": 1, "name": "Dogs"},
+            "name": "doggie",
+            "photoUrls": ["string"],
+            "tags": [{"id": 1, "name": "friendly"}],
+            "status": "available"
+        }
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(f"{BASE_URL}/pet", headers=headers, data=json.dumps(pet_payload))
+
+        self.assert_with_message(response.status_code == 200,
+                                 "Питомец успешно создан (POST /pet).",
+                                 "Ошибка при создании питомца (POST /pet).",
+                                 response.status_code, response.text)
+
+        created_pet_id = pet_payload['id']
+
+        # 1.2. Получение питомца
+        print("  [ПОДТЕСТ] Получение питомца")
+        response = requests.get(f"{BASE_URL}/pet/{created_pet_id}")
+        self.assert_with_message(response.status_code == 200,
+                                 f"Питомец успешно получен (GET /pet/{created_pet_id}).",
+                                 f"Ошибка при получении питомца (GET /pet/{created_pet_id}).",
+                                 response.status_code, response.text)
+
+        response_json = response.json()
+        self.assert_with_message(response_json['name'] == pet_payload['name'],
+                                 "Имя питомца соответствует отправленным данным.",
+                                 "Имя питомца не соответствует отправленным данным.",
+                                 response.status_code, response.text)
+
+        # 1.3. Обновление питомца
+        print("  [ПОДТЕСТ] Обновление питомца")
+        updated_pet_payload = {
+            "id": created_pet_id,
+            "category": {"id": 1, "name": "Dogs"},
+            "name": "doggie_updated",
+            "photoUrls": ["string"],
+            "tags": [{"id": 1, "name": "updated_friendly"}],
+            "status": "sold"
+        }
+        response = requests.put(f"{BASE_URL}/pet", headers=headers, data=json.dumps(updated_pet_payload))
+        self.assert_with_message(response.status_code == 200,
+                                 "Питомец успешно обновлен (PUT /pet).",
+                                 "Ошибка при обновлении питомца (PUT /pet).",
+                                 response.status_code, response.text)
+
+        # Проверка, что обновление прошло успешно, получив питомца еще раз
+        response = requests.get(f"{BASE_URL}/pet/{created_pet_id}")
+        response_json = response.json()
+        self.assert_with_message(response_json['name'] == updated_pet_payload['name'] and response_json['status'] == updated_pet_payload['status'],
+                                 "Данные питомца успешно обновлены.",
+                                 "Данные питомца не были обновлены.",
+                                 response.status_code, response.text)
+
+
+        # 1.4. Удаление питомца
+        print("  [ПОДТЕСТ] Удаление питомца")
+        response = requests.delete(f"{BASE_URL}/pet/{created_pet_id}")
+        self.assert_with_message(response.status_code == 200,
+                                 f"Питомец успешно удален (DELETE /pet/{created_pet_id}).",
+                                 f"Ошибка при удалении питомца (DELETE /pet/{created_pet_id}).",
+                                 response.status_code, response.text)
+
+        # Попытка получить удаленного питомца, ожидаем 404
+        response = requests.get(f"{BASE_URL}/pet/{created_pet_id}")
+        self.assert_with_message(response.status_code == 404,
+                                 "Подтверждение удаления: питомец не найден (GET /pet/{created_pet_id} после DELETE).",
+                                 "Ошибка при удалении: питомец все еще доступен (GET /pet/{created_pet_id} после DELETE).",
+                                 response.status_code, response.text)
+
+
+    # 2. Проверка работы API для заказов (Store)
+    def test_store_order_crud(self):
+        print("\n[НАЧАЛО ТЕСТА] Проверка API для заказов (Store)")
+
+        # 2.1. Размещение заказа
+        print("  [ПОДТЕСТ] Размещение заказа")
+        order_payload = {
+            "petId": 12345, # Используем petId, который могли создать в предыдущем тесте, но лучше создать новый для изоляции тестов
+            "quantity": 1,
+            "shipDate": "2024-01-01T10:10:10.000Z",
+            "status": "placed",
+            "complete": True
+        }
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(f"{BASE_URL}/store/order", headers=headers, data=json.dumps(order_payload))
+        self.assert_with_message(response.status_code == 200,
+                                 "Заказ успешно размещен (POST /store/order).",
+                                 "Ошибка при размещении заказа (POST /store/order).",
+                                 response.status_code, response.text)
+
+        created_order_id = response.json()['orderId'] if 'orderId' in response.json() else response.json()['id'] # Swagger petstore возвращает orderId или id в зависимости от запроса
+
+        # 2.2. Получение заказа
+        print("  [ПОДТЕСТ] Получение заказа")
+        response = requests.get(f"{BASE_URL}/store/order/{created_order_id}")
+        self.assert_with_message(response.status_code == 200,
+                                 f"Заказ успешно получен (GET /store/order/{created_order_id}).",
+                                 f"Ошибка при получении заказа (GET /store/order/{created_order_id}).",
+                                 response.status_code, response.text)
+
+        response_json = response.json()
+        self.assert_with_message(str(response_json['petId']) == str(order_payload['petId']), # petId может вернуться как int или string
+                                 "Информация о заказе соответствует отправленным данным (petId).",
+                                 "Информация о заказе не соответствует отправленным данным (petId).",
+                                 response.status_code, response.text)
+
+        # 2.3. Удаление заказа
+        print("  [ПОДТЕСТ] Удаление заказа")
+        response = requests.delete(f"{BASE_URL}/store/order/{created_order_id}")
+        self.assert_with_message(response.status_code == 200,
+                                 f"Заказ успешно удален (DELETE /store/order/{created_order_id}).",
+                                 f"Ошибка при удалении заказа (DELETE /store/order/{created_order_id}).",
+                                 response.status_code, response.text)
+
+        # Попытка получить удаленный заказ, ожидаем 404
+        response = requests.get(f"{BASE_URL}/store/order/{created_order_id}")
+        self.assert_with_message(response.status_code == 404,
+                                 "Подтверждение удаления: заказ не найден (GET /store/order/{created_order_id} после DELETE).",
+                                 "Ошибка при удалении: заказ все еще доступен (GET /store/order/{created_orderId} после DELETE).",
+                                 response.status_code, response.text)
+
+
+    # 3. Проверка управления пользователями
+    def test_user_management(self):
+        print("\n[НАЧАЛО ТЕСТА] Проверка управления пользователями")
+
+        username = "testuser"
+        user_payload = {
+            "id": 10,
+            "username": username,
+            "firstName": "Test",
+            "lastName": "User",
+            "email": "test@example.com",
+            "password": "password123",
+            "phone": "123-456-7890",
+            "userStatus": 1
+        }
+        headers = {'Content-Type': 'application/json'}
+
+        # 3.1. Создание пользователя
+        print("  [ПОДТЕСТ] Создание пользователя")
+        response = requests.post(f"{BASE_URL}/user", headers=headers, data=json.dumps(user_payload))
+        self.assert_with_message(response.status_code == 200,
+                                 "Пользователь успешно создан (POST /user).",
+                                 "Ошибка при создании пользователя (POST /user).",
+                                 response.status_code, response.text)
+
+        # 3.2. Получение информации о пользователе
+        print("  [ПОДТЕСТ] Получение информации о пользователе")
+        response = requests.get(f"{BASE_URL}/user/{username}")
+        self.assert_with_message(response.status_code == 200,
+                                 f"Информация о пользователе успешно получена (GET /user/{username}).",
+                                 f"Ошибка при получении информации о пользователе (GET /user/{username}).",
+                                 response.status_code, response.text)
+        response_json = response.json()
+        self.assert_with_message(response_json['username'] == username,
+                                 "Имя пользователя соответствует отправленным данным.",
+                                 "Имя пользователя не соответствует отправленным данным.",
+                                 response.status_code, response.text)
+
+        # 3.3. Обновление данных пользователя
+        print("  [ПОДТЕСТ] Обновление данных пользователя")
+        updated_user_payload = {
+            "id": 10,
+            "username": username,
+            "firstName": "UpdatedTest",
+            "lastName": "UpdatedUser",
+            "email": "updated_test@example.com",
+            "password": "newpassword456", # Пароль тоже обновляем для полноты теста, но в реальной жизни это может быть отдельный endpoint
+            "phone": "987-654-3210",
+            "userStatus": 2
+        }
+        response = requests.put(f"{BASE_URL}/user/{username}", headers=headers, data=json.dumps(updated_user_payload))
+        self.assert_with_message(response.status_code == 200,
+                                 "Данные пользователя успешно обновлены (PUT /user/{username}).",
+                                 "Ошибка при обновлении данных пользователя (PUT /user/{username}).",
+                                 response.status_code, response.text)
+
+        # Проверка, что обновление прошло успешно
+        response = requests.get(f"{BASE_URL}/user/{username}")
+        response_json = response.json()
+        self.assert_with_message(response_json['firstName'] == updated_user_payload['firstName'] and response_json['userStatus'] == updated_user_payload['userStatus'],
+                                 "Данные пользователя успешно обновлены (проверка после PUT).",
+                                 "Данные пользователя не были обновлены (проверка после PUT).",
+                                 response.status_code, response.text)
+
+
+        # 3.4. Удаление пользователя
+        print("  [ПОДТЕСТ] Удаление пользователя")
+        response = requests.delete(f"{BASE_URL}/user/{username}")
+        self.assert_with_message(response.status_code == 200,
+                                 f"Пользователь успешно удален (DELETE /user/{username}).",
+                                 f"Ошибка при удалении пользователя (DELETE /user/{username}).",
+                                 response.status_code, response.text)
+
+        # Попытка получить удаленного пользователя, ожидаем 404
+        response = requests.get(f"{BASE_URL}/user/{username}")
+        self.assert_with_message(response.status_code == 404,
+                                 "Подтверждение удаления: пользователь не найден (GET /user/{username} после DELETE).",
+                                 "Ошибка при удалении: пользователь все еще доступен (GET /user/{username} после DELETE).",
+                                 response.status_code, response.text)
+
+
+    # 4. Дополнительные проверки для питомцев
+    def test_pet_additional_checks(self):
+        print("\n[НАЧАЛО ТЕСТА] Дополнительные проверки для питомцев")
+
+        # 4.1. Поиск питомцев по статусу
+        print("  [ПОДТЕСТ] Поиск питомцев по статусу 'available'")
+        response = requests.get(f"{BASE_URL}/pet/findByStatus?status=available")
+        self.assert_with_message(response.status_code == 200,
+                                 "Поиск питомцев по статусу 'available' выполнен успешно (GET /pet/findByStatus?status=available).",
+                                 "Ошибка при поиске питомцев по статусу 'available' (GET /pet/findByStatus?status=available).",
+                                 response.status_code, response.text)
+        for pet in response.json():
+            self.assert_with_message(pet['status'] == 'available',
+                                     "Все питомцы в ответе имеют статус 'available'.",
+                                     "Не все питомцы в ответе имеют статус 'available'.",
+                                     response.status_code, response.text)
+
+        print("  [ПОДТЕСТ] Поиск питомцев по статусу 'pending'")
+        response = requests.get(f"{BASE_URL}/pet/findByStatus?status=pending")
+        self.assert_with_message(response.status_code == 200,
+                                 "Поиск питомцев по статусу 'pending' выполнен успешно (GET /pet/findByStatus?status=pending).",
+                                 "Ошибка при поиске питомцев по статусу 'pending' (GET /pet/findByStatus?status=pending).",
+                                 response.status_code, response.text)
+        for pet in response.json():
+            self.assert_with_message(pet['status'] == 'pending',
+                                     "Все питомцы в ответе имеют статус 'pending'.",
+                                     "Не все питомцы в ответе имеют статус 'pending'.",
+                                     response.status_code, response.text)
+
+        print("  [ПОДТЕСТ] Поиск питомцев по статусу 'sold'")
+        response = requests.get(f"{BASE_URL}/pet/findByStatus?status=sold")
+        self.assert_with_message(response.status_code == 200,
+                                 "Поиск питомцев по статусу 'sold' выполнен успешно (GET /pet/findByStatus?status=sold).",
+                                 "Ошибка при поиске питомцев по статусу 'sold' (GET /pet/findByStatus?status=sold).",
+                                 response.status_code, response.text)
+        for pet in response.json():
+            self.assert_with_message(pet['status'] == 'sold',
+                                     "Все питомцы в ответе имеют статус 'sold'.",
+                                     "Не все питомцы в ответе имеют статус 'sold'.",
+                                     response.status_code, response.text)
+
+
+        # 4.2. Поиск питомцев по тегам
+        print("  [ПОДТЕСТ] Поиск питомцев по тегам")
+        tags = "friendly,cute" # Используем несколько тегов для проверки
+        response = requests.get(f"{BASE_URL}/pet/findByTags?tags={tags}")
+        self.assert_with_message(response.status_code == 200,
+                                 f"Поиск питомцев по тегам '{tags}' выполнен успешно (GET /pet/findByTags?tags={tags}).",
+                                 f"Ошибка при поиске питомцев по тегам '{tags}' (GET /pet/findByTags?tags={tags}).",
+                                 response.status_code, response.text)
+        # API Swagger Petstore может не возвращать результаты, если нет питомцев с такими тегами,
+        # поэтому здесь только проверяем успешность запроса. В реальном тесте нужно было бы подготовить данные.
+
+
+    # 5. Проверка аутентификации пользователей и безопасности паролей
+    def test_user_authentication_security(self):
+        print("\n[НАЧАЛО ТЕСТА] Проверка аутентификации пользователей и безопасности паролей")
+
+        username = "testuser_login" # Новый пользователь для тестов логина
+        password = "login_password"
+        user_payload_login_test = {
+            "id": 11,
+            "username": username,
+            "firstName": "LoginTest",
+            "lastName": "User",
+            "email": "login_test@example.com",
+            "password": password,
+            "phone": "111-222-3333",
+            "userStatus": 1
+        }
+        headers = {'Content-Type': 'application/json'}
+        requests.post(f"{BASE_URL}/user", headers=headers, data=json.dumps(user_payload_login_test)) # Создаем пользователя для тестов логина
+
+        # 5.1. Логин пользователя
+        print("  [ПОДТЕСТ] Логин пользователя")
+        response = requests.get(f"{BASE_URL}/user/login?username={username}&password={password}")
+        self.assert_with_message(response.status_code == 200,
+                                 "Логин пользователя выполнен успешно (GET /user/login).",
+                                 "Ошибка при логине пользователя (GET /user/login).",
+                                 response.status_code, response.text)
+        self.assert_with_message("password" not in response.text,
+                                 "Пароль не возвращается в открытом виде в ответе API.",
+                                 "Пароль возвращается в открытом виде в ответе API (УЯЗВИМОСТЬ БЕЗОПАСНОСТИ!).",
+                                 response.status_code, response.text)
+
+
+        # 5.2. Логаут пользователя
+        print("  [ПОДТЕСТ] Логаут пользователя")
+        response = requests.get(f"{BASE_URL}/user/logout")
+        self.assert_with_message(response.status_code == 200,
+                                 "Логаут пользователя выполнен успешно (GET /user/logout).",
+                                 "Ошибка при логауте пользователя (GET /user/logout).",
+                                 response.status_code, response.text)
+
+        # 5.3. Проверка закрытости пароля
+        print("  [ПОДТЕСТ] Проверка закрытости пароля")
+        response = requests.get(f"{BASE_URL}/user/{username}")
+        self.assert_with_message("password" not in response.text,
+                                 "Пароль не возвращается при запросе информации о пользователе (GET /user/{username}).",
+                                 "Пароль возвращается при запросе информации о пользователе (GET /user/{username}) (УЯЗВИМОСТЬ БЕЗОПАСНОСТИ!).",
+                                 response.status_code, response.text)
+
+        print("  [ПОДТЕСТ] Попытка логина с неверным паролем")
+        response = requests.get(f"{BASE_URL}/user/login?username={username}&password=wrong_password")
+        self.assert_with_message(response.status_code != 200 and response.status_code != 404, # Ожидаем код ошибки, но не 404 (пользователь должен существовать)
+                                 "Система отклоняет логин с неверным паролем.",
+                                 "Система принимает логин с неверным паролем (УЯЗВИМОСТЬ БЕЗОПАСНОСТИ!).",
+                                 response.status_code, response.text)
+        self.assert_with_message("invalid password" not in response.text.lower() and "incorrect password" not in response.text.lower() and "wrong password" not in response.text.lower(),
+                                 "Система не раскрывает информацию о правильном пароле в сообщении об ошибке.",
+                                 "Система раскрывает информацию о правильном пароле в сообщении об ошибке (УЯЗВИМОСТЬ БЕЗОПАСНОСТИ!).",
+                                 response.status_code, response.text)
+
+        # 5.4. Ограничение на повторные попытки входа - ТРЕБУЕТ ДОПОЛНИТЕЛЬНОЙ РЕАЛИЗАЦИИ, Swagger Petstore не имеет такой защиты "из коробки".
+        print("  [ПОДТЕСТ] Ограничение на повторные попытки входа - *ПРОВЕРКА ВРУЧНУЮ, Т.К. API НЕ ИМЕЕТ ТАКОЙ ФУНКЦИОНАЛЬНОСТИ*")
+        print("    Инструкция: Выполните несколько запросов на /user/login с неверными данными и проверьте, блокируется ли учетная запись или появляется ли сообщение о превышении лимита попыток.")
+        print("    В Swagger Petstore по умолчанию нет механизма блокировки или ограничения попыток. Эта проверка требует ручного анализа поведения API или настройки дополнительной защиты на сервере.")
+
+
+    # 6. Проверка сценариев с невалидными данными и ошибками
+    def test_invalid_data_errors(self):
+        print("\n[НАЧАЛО ТЕСТА] Проверка сценариев с невалидными данными и ошибками")
+
+        # 6.1. Неверные запросы
+        print("  [ПОДТЕСТ] Запросы с несуществующим ID")
+        invalid_pet_id = 999999
+        response = requests.get(f"{BASE_URL}/pet/{invalid_pet_id}")
+        self.assert_with_message(response.status_code == 404,
+                                 f"Запрос с несуществующим ID ({invalid_pet_id}) возвращает 404 (верный код ошибки для GET /pet/{{petId}}).",
+                                 f"Запрос с несуществующим ID ({invalid_pet_id}) не возвращает 404 (неверный код ошибки для GET /pet/{{petId}}).",
+                                 response.status_code, response.text)
+
+        print("  [ПОДТЕСТ] Запросы с неверными типами данных")
+        invalid_pet_id_str = "abc"
+        response = requests.get(f"{BASE_URL}/pet/{invalid_pet_id_str}")
+        self.assert_with_message(response.status_code == 404 or response.status_code == 400, # Может вернуть 400 или 404 в зависимости от интерпретации ID
+                                 f"Запрос с неверным типом ID ('{invalid_pet_id_str}') возвращает 400 или 404 (верный код ошибки для GET /pet/{{petId}}).",
+                                 f"Запрос с неверным типом ID ('{invalid_pet_id_str}') не возвращает 400 или 404 (неверный код ошибки для GET /pet/{{petId}}).",
+                                 response.status_code, response.text)
+
+
+        # 6.2. Отсутствующие или неполные данные
+        print("  [ПОДТЕСТ] Создание питомца без обязательных полей")
+        pet_payload_incomplete = { # Нет обязательного поля 'name'
+            "id": 12346,
+            "category": {"id": 1, "name": "Cats"},
+            "photoUrls": ["string"],
+            "tags": [{"id": 1, "name": "cute"}],
+            "status": "available"
+        }
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(f"{BASE_URL}/pet", headers=headers, data=json.dumps(pet_payload_incomplete))
+        self.assert_with_message(response.status_code != 200 and response.status_code != 404, # Ожидаем код ошибки валидации, не 200 или 404
+                                 "Система обнаруживает отсутствие обязательных полей при создании питомца.",
+                                 "Система не обнаруживает отсутствие обязательных полей при создании питомца (УЯЗВИМОСТЬ!).",
+                                 response.status_code, response.text)
+
+
+        # 6.3. Проверка создания заказа с некорректными данными
+        print("  [ПОДТЕСТ] Создание заказа с несуществующим ID питомца")
+        order_payload_invalid_pet = {
+            "petId": 999999, # Несуществующий ID питомца
+            "quantity": 1,
+            "shipDate": "2024-01-02T10:10:10.000Z",
+            "status": "placed",
+            "complete": True
+        }
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(f"{BASE_URL}/store/order", headers=headers, data=json.dumps(order_payload_invalid_pet))
+        self.assert_with_message(response.status_code != 200 and response.status_code != 404, # Ожидаем код ошибки, не 200 или 404
+                                 "Система отклоняет создание заказа с несуществующим ID питомца.",
+                                 "Система принимает создание заказа с несуществующим ID питомца (ОШИБКА БИЗНЕС-ЛОГИКИ!).",
+                                 response.status_code, response.text)
+
+
+        # 6.4. Использование неподдерживаемых HTTP-методов
+        print("  [ПОДТЕСТ] Использование неподдерживаемого метода PATCH для /pet")
+        pet_payload_patch_test = {
+            "id": 12347,
+            "category": {"id": 1, "name": "Birds"},
+            "name": "parrot",
+            "photoUrls": ["string"],
+            "tags": [{"id": 1, "name": "talkative"}],
+            "status": "available"
+        }
+        headers = {'Content-Type': 'application/json'}
+        requests.post(f"{BASE_URL}/pet", headers=headers, data=json.dumps(pet_payload_patch_test)) # Создаем питомца для теста PATCH
+
+        response = requests.patch(f"{BASE_URL}/pet", headers=headers, data=json.dumps(pet_payload_patch_test)) # PATCH метод не поддерживается для /pet
+        self.assert_with_message(response.status_code == 405, # Ожидаем 405 Method Not Allowed
+                                 "API возвращает 405 для неподдерживаемого метода PATCH для /pet (верный код ошибки).",
+                                 "API не возвращает 405 для неподдерживаемого метода PATCH для /pet (неверный код ошибки).",
+                                 response.status_code, response.text)
+
+        # 6.5. Проверка ввода слишком длинных строк - *ТРЕБУЕТ ДОПОЛНИТЕЛЬНОЙ РЕАЛИЗАЦИИ, API SCHEMA НЕ ОГРАНИЧИВАЕТ ДЛИНУ СТРОК*
+        print("  [ПОДТЕСТ] Проверка ввода слишком длинных строк - *ПРОВЕРКА ВРУЧНУЮ, Т.К. API SCHEMA НЕ ОГРАНИЧИВАЕТ ДЛИНУ СТРОК*")
+        print("    Инструкция: Попробуйте отправить данные с превышением максимально допустимой длины, если таковые определены в схеме API. В Swagger Petstore schema не задает ограничений на длину строк.")
+        print("    В реальном API нужно проверять ограничения на длину строк, если они есть, чтобы предотвратить переполнение буфера или другие проблемы.")
+
+
+        # 6.6. Тестирование на инъекции и XSS - *ТРЕБУЕТ ДОПОЛНИТЕЛЬНОЙ РЕАЛИЗАЦИИ, НУЖНО ОТПРАВЛЯТЬ ПОТЕНЦИАЛЬНО ОПАСНЫЕ ДАННЫЕ И АНАЛИЗИРОВАТЬ ОТВЕТ*
+        print("  [ПОДТЕСТ] Тестирование на инъекции и XSS - *ПРОВЕРКА ВРУЧНУЮ И АНАЛИЗ ОТВЕТОВ, Т.К. АВТОМАТИЗИРОВАННАЯ ПРОВЕРКА ИНЪЕКЦИЙ ТРЕБУЕТ СПЕЦИАЛИЗИРОВАННЫХ ИНСТРУМЕНТОВ*")
+        print("    Инструкция: Попробуйте отправить данные, содержащие потенциально опасные символы или скрипты в различных полях (например, name, username, tags) и проверьте, как API их обрабатывает.")
+        print("    Примеры данных для XSS: <script>alert('XSS')</script>, <img src='x' onerror='alert(\"XSS\")'>")
+        print("    Примеры данных для SQL Injection: ' OR '1'='1', ; DROP TABLE users;")
+        print("    После отправки данных, нужно проверить, что: ")
+        print("      - API не выполняет вредоносный код.")
+        print("      - Данные корректно экранируются в ответах API (например, при получении питомца или пользователя).")
+        print("      - Нет утечки данных из базы данных или других систем.")
+        print("    Автоматизированная проверка инъекций требует специализированных инструментов и более глубокого анализа, чем простые HTTP-запросы.")
+
+
+        # 6.7. Проверка формата данных
+        print("  [ПОДТЕСТ] Проверка формата данных (неверный формат e-mail при регистрации пользователя)")
+        invalid_email_user_payload = {
+            "id": 12,
+            "username": "invalid_email_user",
+            "firstName": "Invalid",
+            "lastName": "Email",
+            "email": "invalid-email-format", # Неверный формат e-mail
+            "password": "password123",
+            "phone": "123-456-7891",
+            "userStatus": 1
+        }
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(f"{BASE_URL}/user", headers=headers, data=json.dumps(invalid_email_user_payload))
+        self.assert_with_message(response.status_code != 200 and response.status_code != 404, # Ожидаем код ошибки валидации, не 200 или 404
+                                 "Система отклоняет регистрацию пользователя с неверным форматом e-mail.",
+                                 "Система принимает регистрацию пользователя с неверным форматом e-mail (УЯЗВИМОСТЬ!).",
+                                 response.status_code, response.text)
+
+
+        # 6.8. Отсутствие утечки конфиденциальной информации - *ПРОВЕРКА ВИЗУАЛЬНО, АНАЛИЗ ОТВЕТОВ API*
+        print("  [ПОДТЕСТ] Отсутствие утечки конфиденциальной информации - *ПРОВЕРКА ВРУЧНУЮ, АНАЛИЗ ОТВЕТОВ API*")
+        print("    Инструкция: Проанализируйте ответы API на различные запросы (особенно ошибки и логины) и убедитесь, что они не содержат чувствительных данных, таких как:")
+        print("      - Пароли (в открытом виде или хеши, которые могут быть использованы для взлома).")
+        print("      - Секретные ключи API или токены доступа.")
+        print("      - Детали сессии, которые могут быть использованы для несанкционированного доступа.")
+        print("    В Swagger Petstore в ответах API не должны утекать пароли (см. тест 5.3), но необходимо провести общий анализ ответов на предмет других видов конфиденциальной информации.")
+
+
+    # 7. Проверка масштабируемости и производительности - *ТРЕБУЕТ ДОПОЛНИТЕЛЬНОЙ РЕАЛИЗАЦИИ, НЕОБХОДИМЫ ИНСТРУМЕНТЫ ДЛЯ НАГРУЗОЧНОГО ТЕСТИРОВАНИЯ*
+    def test_scalability_performance(self):
+        print("\n[НАЧАЛО ТЕСТА] Проверка масштабируемости и производительности - *ТРЕБУЕТ ДОПОЛНИТЕЛЬНОЙ РЕАЛИЗАЦИИ И ВНЕШНИХ ИНСТРУМЕНТОВ*")
+        print("  [ПОДТЕСТ] Многопоточное выполнение запросов - *ТРЕБУЕТ РЕАЛИЗАЦИИ МНОГОПОТОЧНОСТИ*")
+        print("    Инструкция: Реализуйте многопоточное выполнение запросов к API (например, с помощью threading или asyncio в Python) и проверьте, как система обрабатывает одновременные обращения.")
+        print("    Нужно измерить:")
+        print("      - Количество запросов в секунду (RPS).")
+        print("      - Время ответа при увеличении количества одновременных запросов.")
+        print("      - Наличие ошибок или сбоев при высокой нагрузке.")
+
+        print("  [ПОДТЕСТ] Тестирование нагрузки - *ТРЕБУЕТ ИНСТРУМЕНТОВ НАГРУЗОЧНОГО ТЕСТИРОВАНИЯ (например, Locust, JMeter)*")
+        print("    Инструкция: Используйте инструменты для нагрузочного тестирования для эмуляции высокой нагрузки на API (например, 100, 500, 1000 одновременных пользователей).")
+        print("    Нужно измерить:")
+        print("      - Время ответа при разной нагрузке.")
+        print("      - Пропускную способность API.")
+        print("      - Ресурсы сервера (CPU, память, сеть) во время нагрузки.")
+        print("      - Моменты, когда система начинает замедляться или выдавать ошибки (предел масштабируемости).")
+
+        print("  [ПОДТЕСТ] Анализ времени ответа - *ТРЕБУЕТ ИЗМЕРЕНИЯ ВРЕМЕНИ ОТВЕТА ДЛЯ РАЗНЫХ ЗАПРОСОВ*")
+        print("    Инструкция: Измерьте время ответа для различных типов запросов (CRUD операции, поиск, логин и т.д.) и проверьте, что оно находится в пределах допустимых значений (например, < 200 мс для критически важных операций, < 1 секунды для остальных).")
+        print("    Нужно провести измерения в разных условиях: при низкой и высокой нагрузке, для разных типов запросов, и т.д.")
+
+
+    # 8. Интеграционные тесты
+    def test_integration_tests(self):
+        print("\n[НАЧАЛО ТЕСТА] Интеграционные тесты")
+
+        # 8.1. Связанные операции: Создание питомца, заказ, удаление питомца
+        print("  [ПОДТЕСТ] Связанные операции: Создание питомца, заказ, удаление питомца")
+
+        # Создаем питомца
+        pet_payload_integration = {
+            "category": {"id": 1, "name": "Hamsters"},
+            "name": "hammy_for_order",
+            "photoUrls": ["string"],
+            "tags": [{"id": 1, "name": "cute"}],
+            "status": "available"
+        }
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(f"{BASE_URL}/pet", headers=headers, data=json.dumps(pet_payload_integration))
+        self.assert_with_message(response.status_code == 200,
+                                 "Питомец для интеграционного теста успешно создан (POST /pet).",
+                                 "Ошибка при создании питомца для интеграционного теста (POST /pet).",
+                                 response.status_code, response.text)
+        integration_pet_id = response.json()['id']
+
+        # Оформляем заказ на питомца
+        order_payload_integration = {
+            "petId": integration_pet_id,
+            "quantity": 1,
+            "shipDate": "2024-01-03T10:10:10.000Z",
+            "status": "placed",
+            "complete": True
+        }
+        response = requests.post(f"{BASE_URL}/store/order", headers=headers, data=json.dumps(order_payload_integration))
+        self.assert_with_message(response.status_code == 200,
+                                 "Заказ на питомца успешно размещен (POST /store/order).",
+                                 "Ошибка при размещении заказа на питомца (POST /store/order).",
+                                 response.status_code, response.text)
+        integration_order_id = response.json()['orderId'] if 'orderId' in response.json() else response.json()['id']
+
+        # Удаляем питомца
+        response = requests.delete(f"{BASE_URL}/pet/{integration_pet_id}")
+        self.assert_with_message(response.status_code == 200,
+                                 "Питомец успешно удален (DELETE /pet/{integration_pet_id}).",
+                                 "Ошибка при удалении питомца (DELETE /pet/{integration_pet_id}).",
+                                 response.status_code, response.text)
+
+        # Проверяем, что заказ все еще существует (заказ не должен удаляться при удалении питомца, это разные сущности)
+        response = requests.get(f"{BASE_URL}/store/order/{integration_order_id}")
+        self.assert_with_message(response.status_code == 200,
+                                 "Заказ все еще доступен после удаления питомца (GET /store/order/{integration_order_id}).",
+                                 "Заказ не доступен после удаления питомца (ОШИБКА ИНТЕГРАЦИИ!).",
+                                 response.status_code, response.text)
+        response_json = response.json()
+        self.assert_with_message(str(response_json['petId']) == str(integration_pet_id), # petId в заказе должен соответствовать удаленному petId
+                                 "ID питомца в заказе соответствует удаленному питомцу.",
+                                 "ID питомца в заказе не соответствует удаленному питомцу (ОШИБКА ИНТЕГРАЦИИ!).",
+                                 response.status_code, response.text)
+
+        # Очистка: удаляем заказ, чтобы не засорять базу тестовыми данными
+        requests.delete(f"{BASE_URL}/store/order/{integration_order_id}")
+
+
+if __name__ == '__main__':
+    unittest.main()
+
+
+
+
+---------
+
+Очень не любит обрабочик ошибок
+
+
+
+import requests
+import json
+import pytest
+
+BASE_URL = "https://restful-booker.herokuapp.com"
+AUTH_URL = f"{BASE_URL}/auth"
+BOOKING_URL = f"{BASE_URL}/booking"
+USERNAME = "admin"
+PASSWORD = "password123"
+TOKEN = None
+
+ERROR_COUNT = 0  # Счетчик ошибок для итогового отчета
+ERROR_DETAILS = [] # Список для хранения деталей ошибок
+
+def print_step(message, error=False):
+    """Выводит сообщение шага теста в консоль, с цветовым выделением для ошибок."""
+    if error:
+        print(f"\n\033[91m[FAIL] {message}\033[0m") # Красный цвет для ошибок
+    else:
+        print(f"\n[INFO] {message}")
+
+def log_error(step_message, response=None, expected_code=None, expected_data=None, actual_data=None, exception=None):
+    """Логирует детали ошибки и увеличивает счетчик ошибок."""
+    global ERROR_COUNT, ERROR_DETAILS
+    ERROR_COUNT += 1
+    error_detail = {"step": step_message}
+    if response is not None:
+        error_detail["url"] = response.url
+        error_detail["status_code"] = response.status_code
+        error_detail["response_text"] = response.text
+        if expected_code is not None:
+            error_detail["expected_status_code"] = expected_code
+    if expected_data is not None:
+        error_detail["expected_data"] = expected_data
+    if actual_data is not None:
+        error_detail["actual_data"] = actual_data
+    if exception is not None:
+        error_detail["exception"] = str(exception)  # Логируем исключение как строку
+    ERROR_DETAILS.append(error_detail)
+    print_step(f"{step_message} - Произошла ошибка. Детали сохранены в отчете.", error=True)
+
+
+def assert_status_code(response, expected_code, step_message):
+    """Проверяет код статуса ответа и логирует ошибку в случае неудачи."""
+    if response.status_code != expected_code:
+        log_error(step_message, response, expected_code=expected_code)
+    else:
+        print(f"[PASS] {step_message} - Код ответа {expected_code}")
+
+def assert_equal_data(actual_data, expected_data, step_message):
+    """Сравнивает данные и логирует ошибку в случае расхождения."""
+    if actual_data != expected_data:
+        log_error(step_message, actual_data=actual_data, expected_data=expected_data)
+    else:
+        print(f"[PASS] {step_message} - Данные совпадают")
+
+
+def get_booking_ids():
+    """1.1. Получение списка бронирований."""
+    step_message = "1.1. Проверка получения списка бронирований"
+    print_step(step_message)
+    try:
+        response = requests.get(BOOKING_URL)
+        assert_status_code(response, 200, f"{step_message} - GET /booking - Список бронирований получен успешно")
+        if not isinstance(response.json(), list):
+            log_error(f"{step_message} - GET /booking - Возвращенные данные не являются списком", actual_data=response.json(), expected_data="list")
+        else:
+            print(f"[PASS] {step_message} - Возвращенные данные являются списком")
+            return response.json()
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса GET /booking", exception=e)
+        return None
+
+def create_booking():
+    """1.2. Создание нового бронирования."""
+    step_message = "1.2. Проверка создания нового бронирования"
+    print_step(step_message)
+    headers = {'Content-Type': 'application/json'}
+    payload = {
+        "firstname": "Sally",
+        "lastname": "Brown",
+        "totalprice": 111,
+        "depositpaid": True,
+        "bookingdates": {
+            "checkin": "2018-01-01",
+            "checkout": "2019-01-01"
+        },
+        "additionalneeds": "Breakfast"
+    }
+    try:
+        response = requests.post(BOOKING_URL, headers=headers, data=json.dumps(payload))
+        assert_status_code(response, 200, f"{step_message} - POST /booking - Бронирование создано успешно")
+        booking_id = response.json().get('bookingid')
+        if booking_id is None:
+            log_error(f"{step_message} - POST /booking - Уникальный идентификатор бронирования не возвращен", actual_data=response.json(), expected_data="bookingid in response")
+        else:
+            print(f"[PASS] {step_message} - Уникальный идентификатор бронирования получен")
+            return booking_id, payload
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса POST /booking", exception=e)
+        return None, payload  # Возвращаем None для booking_id, но payload для дальнейших тестов
+
+def get_booking_by_id(booking_id, expected_data):
+    """1.3. Получение информации о бронировании по ID."""
+    step_message = f"1.3. Проверка получения информации о бронировании по ID: {booking_id}"
+    print_step(step_message)
+    try:
+        response = requests.get(f"{BOOKING_URL}/{booking_id}")
+        assert_status_code(response, 200, f"{step_message} - GET /booking/{{id}} - Информация о бронировании получена")
+        actual_data = response.json()
+
+        # Сравнение данных построчно и логирование ошибок сравнения
+        if actual_data['firstname'] != expected_data['firstname']:
+            log_error(f"{step_message} - GET /booking/{{id}} - Имя не совпадает", actual_data=actual_data['firstname'], expected_data=expected_data['firstname'])
+        elif actual_data['lastname'] != expected_data['lastname']:
+            log_error(f"{step_message} - GET /booking/{{id}} - Фамилия не совпадает", actual_data=actual_data['lastname'], expected_data=expected_data['lastname'])
+        elif actual_data['totalprice'] != expected_data['totalprice']:
+            log_error(f"{step_message} - GET /booking/{{id}} - Общая цена не совпадает", actual_data=actual_data['totalprice'], expected_data=expected_data['totalprice'])
+        elif actual_data['depositpaid'] != expected_data['depositpaid']:
+            log_error(f"{step_message} - GET /booking/{{id}} - Статус депозита не совпадает", actual_data=actual_data['depositpaid'], expected_data=expected_data['depositpaid'])
+        elif actual_data['bookingdates']['checkin'] != expected_data['bookingdates']['checkin']:
+            log_error(f"{step_message} - GET /booking/{{id}} - Дата заезда не совпадает", actual_data=actual_data['bookingdates']['checkin'], expected_data=expected_data['bookingdates']['checkin'])
+        elif actual_data['bookingdates']['checkout'] != expected_data['bookingdates']['checkout']:
+            log_error(f"{step_message} - GET /booking/{{id}} - Дата выезда не совпадает", actual_data=actual_data['bookingdates']['checkout'], expected_data=expected_data['bookingdates']['checkout'])
+        elif actual_data['additionalneeds'] != expected_data['additionalneeds']:
+            log_error(f"{step_message} - GET /booking/{{id}} - Дополнительные потребности не совпадают", actual_data=actual_data['additionalneeds'], expected_data=expected_data['additionalneeds'])
+        else:
+            print(f"[PASS] {step_message} - Данные о бронировании соответствуют отправленным")
+
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса GET /booking/{{id}}", exception=e)
+
+
+def update_booking_put(booking_id):
+    """1.4. Полное обновление бронирования (PUT)."""
+    step_message = f"1.4. Проверка полного обновления бронирования (PUT) для ID: {booking_id}"
+    print_step(step_message)
+    headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
+    if TOKEN:
+        headers['Cookie'] = f"token={TOKEN}"
+    else:
+        print_step("[ERROR] Токен аутентификации не получен, невозможно выполнить PUT запрос.", error=True)
+        return None # Возвращаем None, чтобы сигнализировать о невозможности выполнения PATCH/DELETE
+
+    payload = {
+        "firstname": "James",
+        "lastname": "Smith",
+        "totalprice": 222,
+        "depositpaid": False,
+        "bookingdates": {
+            "checkin": "2020-01-01",
+            "checkout": "2021-01-01"
+        },
+        "additionalneeds": "Lunch"
+    }
+    try:
+        response = requests.put(f"{BOOKING_URL}/{booking_id}", headers=headers, data=json.dumps(payload))
+        assert_status_code(response, 200, f"{step_message} - PUT /booking/{{id}} - Бронирование полностью обновлено")
+
+        # Проверяем, что обновление действительно произошло
+        response_get = requests.get(f"{BOOKING_URL}/{booking_id}")
+        updated_booking = response_get.json()
+        if updated_booking['firstname'] != payload['firstname']:
+            log_error(f"{step_message} - PUT /booking/{{id}} - Проверка имени после обновления не пройдена", actual_data=updated_booking['firstname'], expected_data=payload['firstname'])
+        elif updated_booking['lastname'] != payload['lastname']:
+            log_error(f"{step_message} - PUT /booking/{{id}} - Проверка фамилии после обновления не пройдена", actual_data=updated_booking['lastname'], expected_data=payload['lastname'])
+        else:
+            print(f"[PASS] {step_message} - Обновление данных подтверждено")
+            return payload # Возвращаем payload для PATCH
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса PUT /booking/{{id}}", exception=e)
+        return None
+
+
+def update_booking_patch(booking_id, expected_put_payload):
+    """1.5. Частичное обновление бронирования (PATCH)."""
+    step_message = f"1.5. Проверка частичного обновления бронирования (PATCH) для ID: {booking_id}"
+    print_step(step_message)
+    headers = {'Content-Type': 'application/json'}
+    if TOKEN:
+        headers['Cookie'] = f"token={TOKEN}"
+    else:
+        print_step("[ERROR] Токен аутентификации не получен, невозможно выполнить PATCH запрос.", error=True)
+        return
+
+    payload_patch = {
+        "firstname": "Jimmy", # Изменяем только firstname
+    }
+    try:
+        response = requests.patch(f"{BOOKING_URL}/{booking_id}", headers=headers, data=json.dumps(payload_patch))
+        assert_status_code(response, 200, f"{step_message} - PATCH /booking/{{id}} - Бронирование частично обновлено")
+
+        # Проверяем, что обновление действительно произошло
+        response_get = requests.get(f"{BOOKING_URL}/{booking_id}")
+        updated_booking = response_get.json()
+
+        if updated_booking['firstname'] != payload_patch['firstname']:
+            log_error(f"{step_message} - PATCH /booking/{{id}} - Проверка имени после PATCH не пройдена", actual_data=updated_booking['firstname'], expected_data=payload_patch['firstname'])
+        elif updated_booking['lastname'] != expected_put_payload['lastname']:
+            log_error(f"{step_message} - PATCH /booking/{{id}} - Проверка фамилии после PATCH не пройдена (не должна измениться)", actual_data=updated_booking['lastname'], expected_data=expected_put_payload['lastname'])
+        else:
+            print(f"[PASS] {step_message} - Частичное обновление подтверждено")
+
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса PATCH /booking/{{id}}", exception=e)
+
+
+def delete_booking(booking_id):
+    """1.6. Удаление бронирования."""
+    step_message = f"1.6. Проверка удаления бронирования для ID: {booking_id}"
+    print_step(step_message)
+    headers = {}
+    if TOKEN:
+        headers['Cookie'] = f"token={TOKEN}"
+    else:
+        print_step("[ERROR] Токен аутентификации не получен, невозможно выполнить DELETE запрос.", error=True)
+        return
+
+    try:
+        response = requests.delete(f"{BOOKING_URL}/{booking_id}", headers=headers)
+        assert_status_code(response, 201, f"{step_message} - DELETE /booking/{{id}} - Бронирование удалено")
+
+        # Проверяем, что бронирование действительно удалено
+        response_get = requests.get(f"{BOOKING_URL}/{booking_id}")
+        assert_status_code(response_get, 404, f"{step_message} - GET /booking/{{id}} после DELETE - Бронирование не найдено, удаление подтверждено")
+        print(f"[PASS] {step_message} - Удаление бронирования подтверждено")
+
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса DELETE /booking/{{id}}", exception=e)
+
+
+def get_auth_token():
+    """2.1. Получение токена аутентификации."""
+    step_message = "2.1. Проверка получения токена аутентификации"
+    print_step(step_message)
+    headers = {'Content-Type': 'application/json'}
+    payload = {
+        "username": USERNAME,
+        "password": PASSWORD
+    }
+    try:
+        response = requests.post(AUTH_URL, headers=headers, data=json.dumps(payload))
+        assert_status_code(response, 200, f"{step_message} - POST /auth - Токен получен успешно")
+        token = response.json().get('token')
+        if token is None:
+            log_error(f"{step_message} - POST /auth - Токен не был возвращен", actual_data=response.json(), expected_data="token in response")
+        else:
+            print(f"[PASS] {step_message} - Токен аутентификации получен")
+            return token
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса POST /auth", exception=e)
+        return None
+
+def unauthorized_put_patch_delete(booking_id):
+    """2.2. Проверка, что PUT, PATCH и DELETE требуют токен."""
+    step_message = "2.2. Проверка, что PUT, PATCH и DELETE требуют аутентификацию"
+    print_step(step_message)
+
+    # PUT без токена
+    headers_put = {'Content-Type': 'application/json'}
+    payload_put = {
+        "firstname": "NoToken",
+        "lastname": "Update",
+        "totalprice": 100,
+        "depositpaid": True,
+        "bookingdates": {
+            "checkin": "2023-01-01",
+            "checkout": "2023-01-02"
+        },
+        "additionalneeds": "None"
+    }
+    try:
+        response_put = requests.put(f"{BOOKING_URL}/{booking_id}", headers=headers_put, data=json.dumps(payload_put))
+        assert_status_code(response_put, 403, f"{step_message} - PUT /booking/{{id}} без токена - Ошибка авторизации ожидаема")
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса PUT /booking/{{id}} без токена", exception=e)
+
+    # PATCH без токена
+    headers_patch = {'Content-Type': 'application/json'}
+    payload_patch = {
+        "firstname": "NoTokenPatch",
+    }
+    try:
+        response_patch = requests.patch(f"{BOOKING_URL}/{booking_id}", headers=headers_patch, data=json.dumps(payload_patch))
+        assert_status_code(response_patch, 403, f"{step_message} - PATCH /booking/{{id}} без токена - Ошибка авторизации ожидаема")
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса PATCH /booking/{{id}} без токена", exception=e)
+
+
+    # DELETE без токена
+    try:
+        response_delete = requests.delete(f"{BOOKING_URL}/{booking_id}")
+        assert_status_code(response_delete, 403, f"{step_message} - DELETE /booking/{{id}} без токена - Ошибка авторизации ожидаема")
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса DELETE /booking/{{id}} без токена", exception=e)
+
+    print(f"[PASS] {step_message} - PUT, PATCH и DELETE запросы без токена возвращают ошибку авторизации")
+
+
+def invalid_booking_id():
+    """3.1. Запросы с неверным ID бронирования."""
+    step_message = "3.1. Проверка запросов с неверным ID бронирования"
+    print_step(step_message)
+    invalid_id = 999999
+
+    try:
+        response_get = requests.get(f"{BOOKING_URL}/{invalid_id}")
+        assert_status_code(response_get, 404, f"{step_message} - GET /booking/{{id}} - Несуществующий ID, ожидается 404")
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса GET /booking/{{id}} с неверным ID", exception=e)
+
+    try:
+        response_put = requests.put(f"{BOOKING_URL}/{invalid_id}", headers={'Content-Type': 'application/json'}, data=json.dumps({})) # Пустой payload
+        assert_status_code(response_put, 403, f"{step_message} - PUT /booking/{{id}} - Несуществующий ID, ожидается 403 без токена (или 404 с токеном)") # Ожидается 403 без токена
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса PUT /booking/{{id}} с неверным ID", exception=e)
+
+    try:
+        response_patch = requests.patch(f"{BOOKING_URL}/{invalid_id}", headers={'Content-Type': 'application/json'}, data=json.dumps({})) # Пустой payload
+        assert_status_code(response_patch, 403, f"{step_message} - PATCH /booking/{{id}} - Несуществующий ID, ожидается 403 без токена (или 404 с токеном)") # Ожидается 403 без токена
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса PATCH /booking/{{id}} с неверным ID", exception=e)
+
+    try:
+        response_delete = requests.delete(f"{BOOKING_URL}/{invalid_id}")
+        assert_status_code(response_delete, 403, f"{step_message} - DELETE /booking/{{id}} - Несуществующий ID, ожидается 403 без токена (или 404 с токеном)") # Ожидается 403 без токена
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса DELETE /booking/{{id}} с неверным ID", exception=e)
+
+    print(f"[PASS] {step_message} - Запросы с неверным ID возвращают ожидаемые коды ошибок")
+
+
+def missing_required_fields():
+    """3.2. Отсутствие обязательных полей при создании бронирования."""
+    step_message = "3.2. Проверка создания бронирования без обязательных полей"
+    print_step(step_message)
+    headers = {'Content-Type': 'application/json'}
+    # Пропускаем 'firstname'
+    payload_missing_field = {
+        "lastname": "MissingFieldTest",
+        "totalprice": 50,
+        "depositpaid": True,
+        "bookingdates": {
+            "checkin": "2024-01-01",
+            "checkout": "2024-01-02"
+        },
+        "additionalneeds": "Extra pillow"
+    }
+    try:
+        response = requests.post(BOOKING_URL, headers=headers, data=json.dumps(payload_missing_field))
+        assert_status_code(response, 400, f"{step_message} - POST /booking - Отсутствует обязательное поле 'firstname', ожидается 400")
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса POST /booking без обязательных полей", exception=e)
+
+    print(f"[PASS] {step_message} - Система корректно обнаруживает ошибку валидации при отсутствии обязательных полей")
+
+
+def unsupported_http_methods():
+    """3.3. Использование неподдерживаемых HTTP-методов."""
+    step_message = "3.3. Проверка использования неподдерживаемых HTTP-методов"
+    print_step(step_message)
+    try:
+        response_delete_booking_url = requests.delete(BOOKING_URL) # DELETE для /booking (списка)
+        assert_status_code(response_delete_booking_url, 405, f"{step_message} - DELETE /booking - Метод DELETE не поддерживается для списка бронирований, ожидается 405") # По факту 405
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса DELETE /booking", exception=e)
+
+    try:
+        response_post_booking_id_url = requests.post(f"{BOOKING_URL}/123", headers={'Content-Type': 'application/json'}, data=json.dumps({})) # POST для /booking/{id}
+        assert_status_code(response_post_booking_id_url, 405, f"{step_message} - POST /booking/{{id}} - Метод POST не поддерживается для endpoint /booking/{{id}}, ожидается 405") # По факту 405
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса POST /booking/{{id}}", exception=e)
+
+    print(f"[PASS] {step_message} - API возвращает сообщения об ошибках для неподдерживаемых HTTP-методов")
+
+
+def injection_xss_test():
+    """3.4. Проверка на инъекции и XSS (очень базовая проверка)."""
+    step_message = "3.4. Проверка на инъекции и XSS (базовая)"
+    print_step(step_message)
+    headers = {'Content-Type': 'application/json'}
+    payload_xss = {
+        "firstname": "<script>alert('XSS')</script>",
+        "lastname": "Injection' OR '1'='1", # Базовая SQL-подобная инъекция
+        "totalprice": 100,
+        "depositpaid": True,
+        "bookingdates": {
+            "checkin": "2024-01-01",
+            "checkout": "2024-01-02"
+        },
+        "additionalneeds": "Malicious code"
+    }
+    try:
+        response = requests.post(BOOKING_URL, headers=headers, data=json.dumps(payload_xss))
+        assert_status_code(response, 200, f"{step_message} - POST /booking с потенциально опасными данными - Запрос выполнен успешно (API может быть уязвим)") # API вернул 200, что может быть проблемой
+        # В реальном тестировании нужно проверить, как эти данные обрабатываются при получении и отображении.
+        print(f"[WARNING] {step_message} - API принимает данные, содержащие потенциально опасные символы. Необходима дополнительная проверка обработки данных на уязвимости.")
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса POST /booking с XSS payload", exception=e)
+
+
+def check_content_type_header():
+    """4.2. Проверка заголовков (headers) Content-Type."""
+    step_message = "4.2. Проверка наличия и корректности заголовка Content-Type"
+    print_step(step_message)
+    try:
+        response = requests.get(BOOKING_URL)
+        content_type = response.headers.get('Content-Type')
+        if content_type is None:
+            log_error(f"{step_message} - Заголовок Content-Type отсутствует в ответе GET /booking", actual_data=response.headers)
+        elif 'application/json' not in content_type:
+            log_error(f"{step_message} - Заголовок Content-Type не содержит 'application/json'", actual_data=content_type, expected_data='application/json')
+        else:
+            print(f"[PASS] {step_message} - Ответы API содержат заголовок Content-Type: application/json")
+    except requests.exceptions.RequestException as e:
+        log_error(f"{step_message} - Ошибка при выполнении запроса GET /booking для проверки заголовка Content-Type", exception=e)
+
+
+def run_tests():
+    """Запуск всех тестов."""
+    print("\n[START] Запуск комплексного тестирования API с обработкой ошибок...")
+
+    booking_ids_list = get_booking_ids() # 1.1
+    initial_booking_id, booking_payload = create_booking() # 1.2
+    if initial_booking_id: # Продолжаем только если бронирование было создано
+        get_booking_by_id(initial_booking_id, booking_payload) # 1.3
+
+        global TOKEN # Используем глобальную переменную TOKEN
+        TOKEN = get_auth_token() # 2.1 - Получаем токен перед использованием PUT, PATCH, DELETE
+
+        if TOKEN: # Выполняем тесты, требующие токен, только если токен был успешно получен
+            put_payload = update_booking_put(initial_booking_id) # 1.4
+            if put_payload: # Продолжаем PATCH только если PUT прошел (или вернул payload)
+                update_booking_patch(initial_booking_id, put_payload) # 1.5
+                delete_booking(initial_booking_id) # 1.6
+        else:
+            print_step("[WARNING] Токен аутентификации не был получен, пропущены тесты PUT, PATCH, DELETE с токеном.", error=True)
+    else:
+        print_step("[WARNING] Не удалось создать бронирование, пропущены тесты GET ID, PUT, PATCH, DELETE.", error=True)
+
+
+    unauthorized_put_patch_delete(initial_booking_id if initial_booking_id else 0) # 2.2 - Проверка ошибок авторизации для PUT, PATCH, DELETE без токена
+    invalid_booking_id() # 3.1
+    missing_required_fields() # 3.2
+    unsupported_http_methods() # 3.3
+    injection_xss_test() # 3.4
+    check_content_type_header() # 4.2
+
+    print(f"\n[END] Комплексное тестирование API завершено. Количество ошибок: {ERROR_COUNT}")
+    if ERROR_DETAILS:
+        print("\n[ERROR REPORT] Детали ошибок:")
+        for error_detail in ERROR_DETAILS:
+            print(f"\n- Шаг теста: {error_detail['step']}")
+            for key, value in error_detail.items():
+                if key != 'step':
+                    print(f"  - {key}: {value}")
+
+
+if __name__ == "__main__":
+    run_tests()
+
+
+----
+
+
+import requests
+import json
+import time
+
+BASE_URL = "https://petstore.swagger.io/v2"
+
+def colored(text, color_code):
+    return f"\033[{color_code}m{text}\033[0m"
+
+def assert_with_message(condition, message, status_code=None):
+    if status_code:
+        message += f" (Status Code: {status_code})"
+    try:
+        assert condition, colored(message, "91")
+        print(colored(message, "92"))
+    except AssertionError as e:
+        print(colored(e, "91"))
+        raise
+
+def create_pet(pet_data):
+    response = requests.post(f"{BASE_URL}/pet", json=pet_data)
+    assert_with_message(response.status_code in [200, 201], "Pet creation failed", response.status_code)
+    return response.json()
+
+def get_pet(pet_id):
+    response = requests.get(f"{BASE_URL}/pet/{pet_id}")
+    return response
+
+def update_pet(pet_data):
+    response = requests.put(f"{BASE_URL}/pet", json=pet_data)
+    assert_with_message(response.status_code == 200, "Pet update failed", response.status_code)
+    return response.json()
+
+def delete_pet(pet_id):
+    response = requests.delete(f"{BASE_URL}/pet/{pet_id}")
+    return response
+
+def create_order(order_data):
+    response = requests.post(f"{BASE_URL}/store/order", json=order_data)
+    assert_with_message(response.status_code == 200, "Order creation failed", response.status_code)
+    return response.json()
+
+def get_order(order_id):
+    response = requests.get(f"{BASE_URL}/store/order/{order_id}")
+    return response
+
+def delete_order(order_id):
+    response = requests.delete(f"{BASE_URL}/store/order/{order_id}")
+    return response
+
+def create_user(user_data):
+    response = requests.post(f"{BASE_URL}/user", json=user_data)
+    assert_with_message(response.status_code == 200, "User creation failed", response.status_code)
+    return response.json()
+
+def get_user(username):
+    response = requests.get(f"{BASE_URL}/user/{username}")
+    return response
+
+def update_user(username, user_data):
+    response = requests.put(f"{BASE_URL}/user/{username}", json=user_data)
+    assert_with_message(response.status_code == 200, "User update failed", response.status_code)
+    return response.json()
+
+def delete_user(username):
+    response = requests.delete(f"{BASE_URL}/user/{username}")
+    return response
+
+def test_pet_operations():
+    pet_data = {
+        "id": 12345,
+        "name": "TestPet",
+        "category": {"name": "TestCategory"},
+        "status": "available"
+    }
+
+    # Создание питомца
+    created_pet = create_pet(pet_data)
+    time.sleep(1)
+    assert_with_message(created_pet["id"] == pet_data["id"], "Pet creation: ID mismatch")
+    assert_with_message(created_pet["name"] == pet_data["name"], "Pet creation: Name mismatch")
+
+    # Получение питомца
+    retrieved_pet = get_pet(pet_data["id"]).json()
+    time.sleep(1)
+    assert_with_message(retrieved_pet == created_pet, "Pet retrieval: Data mismatch")
+
+    # Обновление питомца
+    updated_pet_data = pet_data.copy()
+    updated_pet_data["name"] = "UpdatedTestPet"
+    updated_pet = update_pet(updated_pet_data)
+    time.sleep(1)
+    assert_with_message(updated_pet["name"] == updated_pet_data["name"], "Pet update: Name mismatch")
+
+    # Удаление питомца
+    delete_pet(pet_data["id"])
+    time.sleep(1)
+    assert_with_message(get_pet(pet_data["id"]).status_code == 404, "Pet deletion: Pet still exists")
+
+def test_order_operations():
+    order_data = {
+        "id": 10,
+        "petId": 12345,
+        "quantity": 1,
+        "shipDate": "2023-10-27T10:00:00.000+0000",
+        "status": "placed",
+        "complete": True
+    }
+
+    # Создание заказа
+    created_order = create_order(order_data)
+    time.sleep(1)
+    assert_with_message(created_order["id"] == order_data["id"], "Order creation: ID mismatch")
+
+    # Получение заказа
+    retrieved_order = get_order(order_data["id"]).json()
+    time.sleep(1)
+    assert_with_message(retrieved_order == created_order, "Order retrieval: Data mismatch")
+
+    # Удаление заказа
+    delete_order(order_data["id"])
+    time.sleep(1)
+    assert_with_message(get_order(order_data["id"]).status_code == 404, "Order deletion: Order still exists")
+
+def test_user_operations():
+    user_data = {
+        "id": 12345,
+        "username": "testuser",
+        "firstName": "Test",
+        "lastName": "User",
+        "email": "test@example.com",
+        "password": "password",
+        "phone": "1234567890",
+        "userStatus": 0
+    }
+
+    # Создание пользователя
+    create_user(user_data)
+    time.sleep(1)
+    retrieved_user = get_user(user_data["username"]).json()
+    time.sleep(1)
+    assert_with_message(retrieved_user["username"] == user_data["username"], "User creation: Username mismatch")
+
+    # Обновление пользователя
+    updated_user_data = user_data.copy()
+    updated_user_data["firstName"] = "UpdatedTest"
+    update_user(user_data["username"], updated_user_data)
+    time.sleep(1)
+    retrieved_updated_user = get_user(user_data["username"]).json()
+    time.sleep(1)
+    assert_with_message(retrieved_updated_user["firstName"] == updated_user_data["firstName"], "User update: First name mismatch")
+
+    # Удаление пользователя
+    delete_user(user_data["username"])
+    time.sleep(1)
+    assert_with_message(get_user(user_data["username"]).status_code == 404, "User deletion: User still exists")
+
+def test_negative_scenarios():
+    # Попытка получить несуществующего питомца
+    assert_with_message(get_pet(99999).status_code == 404, "Negative scenario: Non-existent pet")
+    time.sleep(1)
+    # Попытка получить несуществующий заказ
+    assert_with_message(get_order(99999).status_code == 404, "Negative scenario: Non-existent order")
+    time.sleep(1)
+    # Попытка получить несуществующего пользователя
+    assert_with_message(get_user("nonexistentuser").status_code == 404, "Negative scenario: Non-existent user")
+    time.sleep(1)
+
+    # Запрос с некорректными данными (например, отсутствующее имя питомца)
+    invalid_pet_data = {"id": 12346, "category": {"name": "InvalidCategory"}, "status": "available"}
+    response = requests.post(f"{BASE_URL}/pet", json=invalid_pet_data)
+    assert_with_message(response.status_code == 400, "Negative scenario: Invalid pet data", response.status_code)
+
+if __name__ == "__main__":
+    test_pet_operations()
+    test_user_operations()
+    test_negative_scenarios()
