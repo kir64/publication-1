@@ -1,0 +1,181 @@
+Все пройдены, найдены 3 ошибки
+
+import requests
+import pytest
+from datetime import datetime, timedelta
+
+BASE_URL = "https://petstore.swagger.io/v2"
+
+# 1. Тест: Создание питомца с валидными данными
+def test_create_pet_valid():
+    pet = {
+        "id": 123456789,
+        "name": "Fluffy",
+        "category": {"id": 1, "name": "Dogs"},
+        "photoUrls": ["http://example.com/photo"],
+        "tags": [{"id": 1, "name": "cute"}],
+        "status": "available"
+    }
+    response = requests.post(f"{BASE_URL}/pet", json=pet)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data.get("id") == pet["id"]
+
+# 2. Тест: Получение питомца по ID (валидный ID)
+def test_get_pet_valid():
+    pet_id = 123456789
+    response = requests.get(f"{BASE_URL}/pet/{pet_id}")
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data.get("id") == pet_id
+
+# 3. Тест: Получение питомца по несуществующему ID (негативный сценарий)
+def test_get_pet_invalid():
+    pet_id = 999999999999  # предположительно несуществующий ID
+    response = requests.get(f"{BASE_URL}/pet/{pet_id}")
+    assert response.status_code == 404
+
+# 4. Тест: Обновление питомца с валидными данными
+def test_update_pet_valid():
+    pet = {
+        "id": 123456789,
+        "name": "FluffyUpdated",
+        "category": {"id": 1, "name": "Dogs"},
+        "photoUrls": ["http://example.com/photo_updated"],
+        "tags": [{"id": 1, "name": "cute"}],
+        "status": "sold"
+    }
+    response = requests.put(f"{BASE_URL}/pet", json=pet)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data.get("name") == "FluffyUpdated"
+
+# 5. Тест: Удаление питомца по ID (валидный случай)
+def test_delete_pet_valid():
+    pet_id = 123456789
+    response = requests.delete(f"{BASE_URL}/pet/{pet_id}")
+    # API может вернуть 200 или 204
+    assert response.status_code in [200, 204]
+
+# 6. Тест: Удаление уже удалённого питомца (негативный сценарий)
+def test_delete_pet_invalid():
+    pet_id = 123456789  # питомец уже удалён в предыдущем тесте
+    response = requests.delete(f"{BASE_URL}/pet/{pet_id}")
+    # Ожидается, что API вернёт 404
+    assert response.status_code == 404
+
+# 7. Тест: Поиск питомцев по статусу
+def test_find_pet_by_status():
+    params = {"status": "available"}
+    response = requests.get(f"{BASE_URL}/pet/findByStatus", params=params)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert isinstance(data, list)
+
+# 8. Тест: Создание заказа в магазине с валидными данными
+def test_create_order_valid():
+    # Используем актуальную дату для shipDate
+    ship_date = (datetime.utcnow() + timedelta(days=1)).isoformat() + "Z"
+    order = {
+        "id": 1,
+        "petId": 123456789,  # можно использовать существующий ID питомца
+        "quantity": 2,
+        "shipDate": ship_date,
+        "status": "placed",
+        "complete": True
+    }
+    response = requests.post(f"{BASE_URL}/store/order", json=order)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data.get("id") == order["id"]
+
+# 9. Тест: Получение заказа по ID (валидный случай)
+def test_get_order_valid():
+    order_id = 1
+    response = requests.get(f"{BASE_URL}/store/order/{order_id}")
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data.get("id") == order_id
+
+# 10. Тест: Создание заказа с некорректными данными (например, отрицательное количество)
+def test_create_order_invalid():
+    ship_date = (datetime.utcnow() + timedelta(days=1)).isoformat() + "Z"
+    order = {
+        "id": 2,
+        "petId": 123456789,
+        "quantity": -5,  # недопустимое значение
+        "shipDate": ship_date,
+        "status": "placed",
+        "complete": True
+    }
+    response = requests.post(f"{BASE_URL}/store/order", json=order)
+    # Ожидаем ошибку, например, 400 Bad Request
+    assert response.status_code == 400
+
+# 11. Тест: Создание пользователя с валидными данными
+def test_create_user_valid():
+    user = {
+        "id": 1,
+        "username": "testuser",
+        "firstName": "Test",
+        "lastName": "User",
+        "email": "testuser@example.com",
+        "password": "password123",
+        "phone": "1234567890",
+        "userStatus": 1
+    }
+    response = requests.post(f"{BASE_URL}/user", json=user)
+    assert response.status_code == 200, response.text
+
+# 12. Тест: Создание пользователя с отсутствующим обязательным полем (например, username)
+def test_create_user_missing_username():
+    user = {
+        "id": 2,
+        # username отсутствует
+        "firstName": "NoUsername",
+        "lastName": "User",
+        "email": "nouser@example.com",
+        "password": "password123",
+        "phone": "1234567890",
+        "userStatus": 1
+    }
+    response = requests.post(f"{BASE_URL}/user", json=user)
+    # Ожидаем ошибку 400
+    assert response.status_code == 400
+
+# 13. Тест: Авторизация пользователя с валидными данными
+def test_user_login_valid():
+    params = {"username": "testuser", "password": "password123"}
+    response = requests.get(f"{BASE_URL}/user/login", params=params)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert "message" in data
+
+# 14. Тест: Авторизация пользователя с невалидными данными
+def test_user_login_invalid():
+    params = {"username": "nonexistent", "password": "wrongpassword"}
+    response = requests.get(f"{BASE_URL}/user/login", params=params)
+    # Ожидаем ошибку 400
+    assert response.status_code == 400
+
+# 15. Тест (безопасность): Попытка SQL-инъекции в поле имени питомца
+def test_pet_sql_injection():
+    malicious_name = "'; DROP TABLE pets; --"
+    pet = {
+        "id": 999,
+        "name": malicious_name,
+        "category": {"id": 2, "name": "Cats"},
+        "photoUrls": ["http://example.com/malicious"],
+        "tags": [{"id": 2, "name": "malicious"}],
+        "status": "available"
+    }
+    response = requests.post(f"{BASE_URL}/pet", json=pet)
+    # Ожидается, что API корректно обработает строку без выполнения инъекции
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data.get("name") == malicious_name
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
+
+
