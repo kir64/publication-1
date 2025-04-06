@@ -1,0 +1,315 @@
+Заметно мало кода, причем достаточно понятная часть с ошибками, которая не перегружена, но мало информации в консоли
+
+
+import requests
+import colorama
+from colorama import Fore, Style
+import time
+import threading
+
+colorama.init(autoreset=True)
+
+GREEN = Fore.GREEN
+RED = Fore.RED
+CYAN = Fore.CYAN
+YELLOW = Fore.YELLOW
+RESET = Style.RESET_ALL
+
+BASE_URL = "https://petstore.swagger.io/v2"
+
+def print_header(text):
+    print(f"\n{CYAN}=== {text} ==={RESET}")
+
+def check(condition, success_msg, error_msg):
+    if condition:
+        print(f"{GREEN}[УСПЕХ] {success_msg}{RESET}")
+    else:
+        print(f"{RED}[ОШИБКА] {error_msg}{RESET}")
+
+# 1. Тестирование CRUD для питомцев
+def test_pet_crud():
+    print_header("Тестирование CRUD для питомцев")
+    pet_id = None
+    
+    # Создание питомца
+    pet_data = {
+        "id": 123456789,
+        "name": "Шарик",
+        "category": {"id": 1, "name": "Собаки"},
+        "photoUrls": ["http://example.com/dog.jpg"],
+        "tags": [{"id": 1, "name": "дворняга"}],
+        "status": "available"
+    }
+    response = requests.post(f"{BASE_URL}/pet", json=pet_data)
+    check(response.status_code == 200, 
+         "Питомец создан", 
+         f"Создание питомца: статус {response.status_code}")
+    
+    if response.status_code == 200:
+        pet_id = response.json().get("id")
+        check(pet_id == pet_data["id"], 
+             f"ID питомца корректный: {pet_id}", 
+             "Ошибка в ID питомца")
+    else:
+        return
+
+    # Получение питомца
+    response = requests.get(f"{BASE_URL}/pet/{pet_id}")
+    check(response.status_code == 200, 
+         "Питомец получен", 
+         f"Получение питомца: статус {response.status_code}")
+    
+    if response.status_code == 200:
+        check(response.json()["name"] == "Шарик", 
+             "Имя питомца корректно", 
+             "Ошибка в данных питомца")
+
+    # Обновление питомца
+    updated_data = pet_data.copy()
+    updated_data["name"] = "Бобик"
+    response = requests.put(f"{BASE_URL}/pet", json=updated_data)
+    check(response.status_code == 200, 
+         "Питомец обновлён", 
+         f"Обновление питомца: статус {response.status_code}")
+    
+    if response.status_code == 200:
+        check(response.json()["name"] == "Бобик", 
+             "Имя успешно изменено", 
+             "Ошибка обновления имени")
+
+    # Удаление питомца
+    response = requests.delete(f"{BASE_URL}/pet/{pet_id}")
+    check(response.status_code == 200, 
+         "Питомец удалён", 
+         f"Удаление питомца: статус {response.status_code}")
+    
+    response = requests.get(f"{BASE_URL}/pet/{pet_id}")
+    check(response.status_code == 404, 
+         "Питомец отсутствует в системе", 
+         "Ошибка удаления питомца")
+
+# 2. Тестирование операций с заказами
+def test_store_operations():
+    print_header("Тестирование операций с заказами")
+    order_id = None
+    
+    # Создание заказа
+    order_data = {
+        "petId": 123456789,
+        "quantity": 2,
+        "status": "placed"
+    }
+    response = requests.post(f"{BASE_URL}/store/order", json=order_data)
+    check(response.status_code == 200, 
+         "Заказ создан", 
+         f"Создание заказа: статус {response.status_code}")
+    
+    if response.status_code == 200:
+        order_id = response.json().get("id")
+        check(order_id is not None, 
+             f"ID заказа: {order_id}", 
+             "Ошибка получения ID заказа")
+    else:
+        return
+
+    # Получение заказа
+    response = requests.get(f"{BASE_URL}/store/order/{order_id}")
+    check(response.status_code == 200, 
+         "Заказ получен", 
+         f"Получение заказа: статус {response.status_code}")
+    
+    if response.status_code == 200:
+        check(response.json()["quantity"] == 2, 
+             "Количество корректно", 
+             "Ошибка в данных заказа")
+
+    # Удаление заказа
+    response = requests.delete(f"{BASE_URL}/store/order/{order_id}")
+    check(response.status_code == 200, 
+         "Заказ удалён", 
+         f"Удаление заказа: статус {response.status_code}")
+    
+    response = requests.get(f"{BASE_URL}/store/order/{order_id}")
+    check(response.status_code == 404, 
+         "Заказ отсутствует в системе", 
+         "Ошибка удаления заказа")
+
+# 3. Тестирование управления пользователями
+def test_user_management():
+    print_header("Тестирование управления пользователями")
+    username = f"test_user_{int(time.time())}"
+    
+    # Создание пользователя
+    user_data = {
+        "username": username,
+        "email": "test@example.com",
+        "password": "secret123"
+    }
+    response = requests.post(f"{BASE_URL}/user", json=user_data)
+    check(response.status_code == 200, 
+         "Пользователь создан", 
+         f"Создание пользователя: статус {response.status_code}")
+
+    # Получение пользователя
+    response = requests.get(f"{BASE_URL}/user/{username}")
+    check(response.status_code == 200, 
+         "Пользователь получен", 
+         f"Получение пользователя: статус {response.status_code}")
+    
+    if response.status_code == 200:
+        check("password" not in response.json(), 
+             "Пароль отсутствует в ответе", 
+             "Утечка пароля в открытом виде")
+
+    # Обновление пользователя
+    updated_data = user_data.copy()
+    updated_data["email"] = "new@example.com"
+    response = requests.put(f"{BASE_URL}/user/{username}", json=updated_data)
+    check(response.status_code == 200, 
+         "Данные пользователя обновлены", 
+         f"Обновление пользователя: статус {response.status_code}")
+
+    # Удаление пользователя
+    response = requests.delete(f"{BASE_URL}/user/{username}")
+    check(response.status_code == 200, 
+         "Пользователь удалён", 
+         f"Удаление пользователя: статус {response.status_code}")
+    
+    response = requests.get(f"{BASE_URL}/user/{username}")
+    check(response.status_code == 404, 
+         "Пользователь отсутствует в системе", 
+         "Ошибка удаления пользователя")
+
+# 4. Дополнительные проверки для питомцев
+def test_pet_additional():
+    print_header("Дополнительные проверки для питомцев")
+    
+    # Поиск по статусу
+    for status in ["available", "pending", "sold"]:
+        response = requests.get(f"{BASE_URL}/pet/findByStatus?status={status}")
+        check(response.status_code == 200 and all(p["status"] == status for p in response.json()), 
+             f"Фильтр по статусу '{status}' работает", 
+             f"Ошибка фильтрации по статусу '{status}'")
+
+    # Поиск по тегам
+    response = requests.get(f"{BASE_URL}/pet/findByTags?tags=дворняга")
+    check(response.status_code == 200 and len(response.json()) > 0, 
+         "Фильтр по тегам работает", 
+         "Ошибка фильтрации по тегам")
+
+# 5. Проверка безопасности
+def test_auth_security():
+    print_header("Проверка безопасности")
+    username = f"auth_test_{int(time.time())}"
+    password = "securePass123"
+    
+    # Создание тестового пользователя
+    requests.post(f"{BASE_URL}/user", json={"username": username, "password": password})
+
+    # Успешная аутентификация
+    response = requests.get(f"{BASE_URL}/user/login", params={"username": username, "password": password})
+    check(response.status_code == 200 and "session" in response.headers.get("Set-Cookie", ""), 
+         "Аутентификация успешна", 
+         "Ошибка аутентификации")
+
+    # Проверка закрытости пароля
+    check("password" not in response.text, 
+         "Пароль не раскрывается", 
+         "Утечка пароля при аутентификации")
+
+    # Неудачная аутентификация
+    response = requests.get(f"{BASE_URL}/user/login", params={"username": username, "password": "wrong"})
+    check(response.status_code == 401, 
+         "Защита от неверных паролей работает", 
+         f"Неверный статус ошибки: {response.status_code}")
+
+# 6. Проверка обработки ошибок
+def test_invalid_data_handling():
+    print_header("Проверка обработки ошибок")
+    
+    # Несуществующий ID
+    response = requests.get(f"{BASE_URL}/pet/999999999")
+    check(response.status_code == 404, 
+         "Обработка несуществующего ID", 
+         f"Статус: {response.status_code}")
+
+    # Невалидные данные
+    response = requests.post(f"{BASE_URL}/pet", json={"invalid": "data"})
+    check(response.status_code == 400, 
+         "Валидация входных данных", 
+         f"Статус: {response.status_code}")
+
+# 7. Проверка производительности
+def test_performance_scalability():
+    print_header("Проверка производительности")
+    
+    # Тест времени ответа
+    start_time = time.time()
+    requests.get(f"{BASE_URL}/pet/findByStatus?status=available")
+    duration = time.time() - start_time
+    check(duration < 2.0, 
+         f"Приемлемое время ответа ({duration:.2f} сек)", 
+         f"Медленный ответ ({duration:.2f} сек)")
+
+    # Параллельные запросы
+    def make_request():
+        requests.get(f"{BASE_URL}/pet/findByStatus?status=available")
+
+    threads = [threading.Thread(target=make_request) for _ in range(10)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    print(f"{YELLOW}[ИНФО] 10 параллельных запросов выполнено{RESET}")
+
+# 8. Интеграционные тесты
+def test_integration():
+    print_header("Интеграционные тесты")
+    
+    # Создание питомца
+    pet_response = requests.post(f"{BASE_URL}/pet", json={
+        "id": 987654321,
+        "name": "Интеграционный",
+        "status": "available"
+    })
+    pet_id = pet_response.json().get("id") if pet_response.ok else None
+
+    # Создание заказа
+    order_response = requests.post(f"{BASE_URL}/store/order", json={
+        "petId": pet_id,
+        "quantity": 1
+    })
+    order_id = order_response.json().get("id") if order_response.ok else None
+
+    # Удаление питомца
+    if pet_id:
+        requests.delete(f"{BASE_URL}/pet/{pet_id}")
+        check(requests.get(f"{BASE_URL}/pet/{pet_id}").status_code == 404, 
+             "Интеграционное удаление питомца", 
+             "Ошибка удаления")
+
+    # Удаление заказа
+    if order_id:
+        check(requests.delete(f"{BASE_URL}/store/order/{order_id}").status_code == 200, 
+             "Интеграционное удаление заказа", 
+             "Ошибка удаления заказа")
+
+def main():
+    tests = [
+        test_pet_crud,
+        test_store_operations,
+        test_user_management,
+        test_pet_additional,
+        test_auth_security,
+        test_invalid_data_handling,
+        test_performance_scalability,
+        test_integration
+    ]
+    
+    for test in tests:
+        try:
+            test()
+        except Exception as e:
+            print(f"{RED}Критическая ошибка в тесте {test.__name__}: {str(e)}{RESET}")
+
+if __name__ == "__main__":
+    main()
+

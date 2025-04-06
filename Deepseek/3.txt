@@ -1,0 +1,223 @@
+
+import requests
+import colorama
+from colorama import Fore, Style
+import time
+import threading
+
+colorama.init(autoreset=True)
+
+BASE_URL = "https://restful-booker.herokuapp.com"
+AUTH_DATA = {"username": "admin", "password": "password123"}
+TEST_BOOKING = {
+    "firstname": "Иван",
+    "lastname": "Петров",
+    "totalprice": 1000,
+    "depositpaid": True,
+    "bookingdates": {"checkin": "2024-01-01", "checkout": "2024-01-10"},
+    "additionalneeds": "Завтрак"
+}
+
+def print_result(condition, success_msg, error_msg, response=None):
+    color = Fore.GREEN if condition else Fore.RED
+    message = f"{color}{success_msg if condition else error_msg}"
+    if response:
+        message += f" [Status: {response.status_code}]"
+    print(message)
+    return condition
+
+def get_auth_token():
+    try:
+        response = requests.post(f"{BASE_URL}/auth", json=AUTH_DATA)
+        if print_result(response.status_code == 200, 
+                       "Токен получен", 
+                       "Ошибка получения токена", 
+                       response):
+            return response.json().get("token")
+        return None
+    except Exception as e:
+        print(f"{Fore.RED}Ошибка при получении токена: {str(e)}{Style.RESET_ALL}")
+        return None
+
+def test_basic_operations():
+    print(f"\n{Fore.CYAN}=== Тестирование основных операций с бронированиями ===")
+    booking_id = None
+    token = None
+    
+    # Создание бронирования
+    try:
+        response = requests.post(f"{BASE_URL}/booking", json=TEST_BOOKING)
+        if print_result(response.status_code == 200, 
+                       "Бронирование создано", 
+                       "Ошибка создания бронирования", 
+                       response):
+            booking_id = response.json().get("bookingid")
+    except Exception as e:
+        print(f"{Fore.RED}Ошибка создания бронирования: {str(e)}")
+
+    # Получение информации о бронировании
+    if booking_id:
+        try:
+            response = requests.get(f"{BASE_URL}/booking/{booking_id}")
+            if print_result(response.status_code == 200 and 
+                           response.json()["firstname"] == TEST_BOOKING["firstname"], 
+                           "Данные бронирования корректны", 
+                           "Ошибка получения данных бронирования", 
+                           response):
+                pass
+        except Exception as e:
+            print(f"{Fore.RED}Ошибка получения бронирования: {str(e)}")
+
+    # Полное обновление бронирования
+    if booking_id:
+        token = get_auth_token()
+        updated_data = TEST_BOOKING.copy()
+        updated_data["firstname"] = "Пётр"
+        try:
+            headers = {"Cookie": f"token={token}"} if token else {}
+            response = requests.put(f"{BASE_URL}/booking/{booking_id}", 
+                                  json=updated_data, 
+                                  headers=headers)
+            condition = response.status_code == 200 if token else response.status_code == 403
+            print_result(condition, 
+                        "Полное обновление выполнено", 
+                        "Ошибка полного обновления", 
+                        response)
+        except Exception as e:
+            print(f"{Fore.RED}Ошибка обновления: {str(e)}")
+
+    # Частичное обновление
+    if booking_id and token:
+        try:
+            headers = {"Cookie": f"token={token}"}
+            response = requests.patch(f"{BASE_URL}/booking/{booking_id}", 
+                                     json={"totalprice": 1500}, 
+                                     headers=headers)
+            print_result(response.status_code == 200, 
+                        "Частичное обновление выполнено", 
+                        "Ошибка частичного обновления", 
+                        response)
+        except Exception as e:
+            print(f"{Fore.RED}Ошибка частичного обновления: {str(e)}")
+
+    # Удаление бронирования
+    if booking_id and token:
+        try:
+            response = requests.delete(f"{BASE_URL}/booking/{booking_id}", 
+                                      headers={"Cookie": f"token={token}"})
+            if print_result(response.status_code == 201, 
+                           "Бронирование удалено", 
+                           "Ошибка удаления", 
+                           response):
+                # Проверка удаления
+                response = requests.get(f"{BASE_URL}/booking/{booking_id}")
+                print_result(response.status_code == 404, 
+                            "Бронирование отсутствует", 
+                            "Ошибка проверки удаления", 
+                            response)
+        except Exception as e:
+            print(f"{Fore.RED}Ошибка удаления: {str(e)}")
+
+def test_auth():
+    print(f"\n{Fore.CYAN}=== Тестирование аутентификации ===")
+    invalid_token = "invalid_token123"
+    
+    # Попытка обновления без токена
+    try:
+        response = requests.put(f"{BASE_URL}/booking/1", json={})
+        print_result(response.status_code == 403, 
+                   "Защита от несанкционированного доступа работает", 
+                   "Уязвимость в авторизации", 
+                   response)
+    except Exception as e:
+        print(f"{Fore.RED}Ошибка теста авторизации: {str(e)}")
+
+    # Попытка с неверным токеном
+    try:
+        response = requests.delete(f"{BASE_URL}/booking/1", 
+                                 headers={"Cookie": f"token={invalid_token}"})
+        print_result(response.status_code == 403, 
+                   "Неверный токен отклонён", 
+                   "Уязвимость в проверке токена", 
+                   response)
+    except Exception as e:
+        print(f"{Fore.RED}Ошибка проверки токена: {str(e)}")
+
+def test_error_handling():
+    print(f"\n{Fore.CYAN}=== Тестирование обработки ошибок ===")
+    
+    # Невалидные данные
+    try:
+        invalid_booking = TEST_BOOKING.copy()
+        del invalid_booking["firstname"]
+        response = requests.post(f"{BASE_URL}/booking", json=invalid_booking)
+        print_result(response.status_code == 400, 
+                   "Валидация обязательных полей работает", 
+                   "Пропущена проверка обязательных полей", 
+                   response)
+    except Exception as e:
+        print(f"{Fore.RED}Ошибка теста валидации: {str(e)}")
+
+    # Несуществующий ID
+    try:
+        response = requests.get(f"{BASE_URL}/booking/999999999")
+        print_result(response.status_code == 404, 
+                   "Обработка несуществующего ID", 
+                   "Некорректная обработка 404", 
+                   response)
+    except Exception as e:
+        print(f"{Fore.RED}Ошибка проверки 404: {str(e)}")
+
+def test_security():
+    print(f"\n{Fore.CYAN}=== Тестирование безопасности ===")
+    
+    # XSS-инъекция
+    try:
+        xss_booking = TEST_BOOKING.copy()
+        xss_booking["firstname"] = "<script>alert('xss')</script>"
+        response = requests.post(f"{BASE_URL}/booking", json=xss_booking)
+        safe_name = response.json().get("booking", {}).get("firstname", "")
+        condition = "<" not in safe_name and ">" not in safe_name
+        print_result(condition and response.status_code == 200, 
+                   "XSS-инъекция нейтрализована", 
+                   "Уязвимость к XSS-атакам", 
+                   response)
+    except Exception as e:
+        print(f"{Fore.RED}Ошибка теста XSS: {str(e)}")
+
+def test_performance():
+    print(f"\n{Fore.CYAN}=== Тестирование производительности ===")
+    
+    def make_request():
+        try:
+            start = time.time()
+            requests.get(f"{BASE_URL}/booking")
+            return time.time() - start
+        except:
+            return None
+    
+    # Параллельные запросы
+    try:
+        threads = [threading.Thread(target=make_request) for _ in range(10)]
+        [t.start() for t in threads]
+        [t.join() for t in threads]
+        print(f"{Fore.GREEN}10 параллельных запросов выполнено")
+    except Exception as e:
+        print(f"{Fore.RED}Ошибка нагрузочного теста: {str(e)}")
+
+if __name__ == "__main__":
+    tests = [
+        test_basic_operations,
+        test_auth,
+        test_error_handling,
+        test_security,
+        test_performance
+    ]
+    
+    for test in tests:
+        try:
+            test()
+        except Exception as e:
+            print(f"{Fore.RED}Критическая ошибка в тесте: {str(e)}{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}{'='*50}{Style.RESET_ALL}")
+
