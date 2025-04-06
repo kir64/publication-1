@@ -1,0 +1,217 @@
+
+import requests
+import time
+import json
+from termcolor import colored
+
+# Базовый URL API Petstore
+BASE_URL = "https://petstore.swagger.io/v2"
+
+# Функция для проверки условий с цветным выводом в консоль
+def check(condition, message):
+    if condition:
+        print(colored("PASSED: " + message, "green"))
+    else:
+        print(colored("FAILED: " + message, "red"))
+
+# Тесты для раздела "Питомцы" (/pet)
+print("Начинаем тесты для раздела 'Питомцы' (/pet)")
+# 1. Создание питомца
+pet_data = {
+    "id": 12345,
+    "name": "Buddy",
+    "category": {"id": 1, "name": "Dogs"},
+    "status": "available"
+}
+response = requests.post(f"{BASE_URL}/pet", json=pet_data)
+check(response.status_code == 200, f"Создание питомца: Ожидается код 200, получен {response.status_code}")
+if response.status_code == 200:
+    created_pet = response.json()
+    check(created_pet["id"] == pet_data["id"], f"Создание питомца: ID питомца должен быть {pet_data['id']}, получен {created_pet['id']}")
+    check(created_pet["name"] == pet_data["name"], f"Создание питомца: Имя питомца должно быть {pet_data['name']}, получено {created_pet['name']}")
+    check(created_pet["category"]["name"] == pet_data["category"]["name"], f"Создание питомца: Категория питомца должна быть {pet_data['category']['name']}, получена {created_pet['category']['name']}")
+    check(created_pet["status"] == pet_data["status"], f"Создание питомца: Статус питомца должен быть {pet_data['status']}, получен {created_pet['status']}")
+time.sleep(1)  # Задержка для обработки сервером
+
+# 2. Получение питомца
+pet_id = pet_data["id"]
+response = requests.get(f"{BASE_URL}/pet/{pet_id}")
+check(response.status_code == 200, f"Получение питомца: Ожидается код 200 для ID {pet_id}, получен {response.status_code}")
+if response.status_code == 200:
+    fetched_pet = response.json()
+    check(fetched_pet["id"] == pet_data["id"], f"Получение питомца: ID должен быть {pet_data['id']}, получен {fetched_pet['id']}")
+    check(fetched_pet["name"] == pet_data["name"], f"Получение питомца: Имя должно быть {pet_data['name']}, получено {fetched_pet['name']}")
+time.sleep(1)
+
+# 3. Обновление питомца
+updated_pet_data = {
+    "id": pet_id,
+    "name": "Buddy Updated",
+    "category": {"id": 1, "name": "Dogs"},
+    "status": "sold"
+}
+response = requests.put(f"{BASE_URL}/pet", json=updated_pet_data)
+check(response.status_code == 200, f"Обновление питомца: Ожидается код 200, получен {response.status_code}")
+if response.status_code == 200:
+    updated_pet = response.json()
+    check(updated_pet["name"] == updated_pet_data["name"], f"Обновление питомца: Имя должно быть {updated_pet_data['name']}, получено {updated_pet['name']}")
+    check(updated_pet["status"] == updated_pet_data["status"], f"Обновление питомца: Статус должен быть {updated_pet_data['status']}, получен {updated_pet['status']}")
+time.sleep(1)
+# Проверка обновления через GET
+response = requests.get(f"{BASE_URL}/pet/{pet_id}")
+check(response.status_code == 200, f"Проверка обновления питомца через GET: Ожидается код 200, получен {response.status_code}")
+if response.status_code == 200:
+    fetched_updated_pet = response.json()
+    check(fetched_updated_pet["name"] == updated_pet_data["name"], f"Проверка обновления питомца: Имя должно быть {updated_pet_data['name']}, получено {fetched_updated_pet['name']}")
+    check(fetched_updated_pet["status"] == updated_pet_data["status"], f"Проверка обновления питомца: Статус должен быть {updated_pet_data['status']}, получен {fetched_updated_pet['status']}")
+time.sleep(1)
+
+# 4. Удаление питомца
+response = requests.delete(f"{BASE_URL}/pet/{pet_id}")
+check(response.status_code == 200, f"Удаление питомца: Ожидается код 200, получен {response.status_code}")
+time.sleep(1)
+# Проверка удаления
+response = requests.get(f"{BASE_URL}/pet/{pet_id}")
+check(response.status_code == 404, f"Проверка удаления питомца: Ожидается код 404 для удаленного ID {pet_id}, получен {response.status_code}")
+time.sleep(1)
+
+# Тесты для раздела "Заказы" (/store/order)
+print("Начинаем тесты для раздела 'Заказы' (/store/order)")
+# Создание питомца для заказа
+pet_for_order_data = {
+    "id": 67890,
+    "name": "OrderPet",
+    "category": {"id": 1, "name": "Dogs"},
+    "status": "available"
+}
+response = requests.post(f"{BASE_URL}/pet", json=pet_for_order_data)
+check(response.status_code == 200, f"Создание питомца для заказа: Ожидается код 200, получен {response.status_code}")
+pet_for_order_id = pet_for_order_data["id"]
+time.sleep(1)
+
+# 1. Создание заказа
+order_data = {
+    "id": 1,
+    "petId": pet_for_order_id,
+    "quantity": 1,
+    "shipDate": "2023-01-01T00:00:00.000Z",
+    "status": "placed",
+    "complete": False
+}
+response = requests.post(f"{BASE_URL}/store/order", json=order_data)
+check(response.status_code == 200, f"Создание заказа: Ожидается код 200, получен {response.status_code}")
+if response.status_code == 200:
+    created_order = response.json()
+    check(created_order["id"] == order_data["id"], f"Создание заказа: ID заказа должен быть {order_data['id']}, получен {created_order['id']}")
+    check(created_order["petId"] == order_data["petId"], f"Создание заказа: petId должен быть {order_data['petId']}, получен {created_order['petId']}")
+    check(created_order["status"] == order_data["status"], f"Создание заказа: Статус должен быть {order_data['status']}, получен {created_order['status']}")
+time.sleep(1)
+
+# 2. Получение заказа
+order_id = order_data["id"]
+response = requests.get(f"{BASE_URL}/store/order/{order_id}")
+check(response.status_code == 200, f"Получение заказа: Ожидается код 200 для ID {order_id}, получен {response.status_code}")
+if response.status_code == 200:
+    fetched_order = response.json()
+    check(fetched_order["id"] == order_data["id"], f"Получение заказа: ID должен быть {order_data['id']}, получен {fetched_order['id']}")
+    check(fetched_order["petId"] == order_data["petId"], f"Получение заказа: petId должен быть {order_data['petId']}, получен {fetched_order['petId']}")
+time.sleep(1)
+
+# 3. Удаление заказа
+response = requests.delete(f"{BASE_URL}/store/order/{order_id}")
+check(response.status_code == 200, f"Удаление заказа: Ожидается код 200, получен {response.status_code}")
+time.sleep(1)
+# Проверка удаления
+response = requests.get(f"{BASE_URL}/store/order/{order_id}")
+check(response.status_code == 404, f"Проверка удаления заказа: Ожидается код 404 для удаленного ID {order_id}, получен {response.status_code}")
+time.sleep(1)
+
+# Очистка: удаление питомца для заказа
+response = requests.delete(f"{BASE_URL}/pet/{pet_for_order_id}")
+check(response.status_code == 200, f"Очистка: Удаление питомца для заказа: Ожидается код 200, получен {response.status_code}")
+time.sleep(1)
+
+# Тесты для раздела "Пользователи" (/user)
+print("Начинаем тесты для раздела 'Пользователи' (/user)")
+# 1. Создание пользователя
+user_data = {
+    "id": 1,
+    "username": "testuser",
+    "firstName": "Test",
+    "lastName": "User",
+    "email": "test@user.com",
+    "password": "password",
+    "phone": "1234567890",
+    "userStatus": 0
+}
+response = requests.post(f"{BASE_URL}/user", json=user_data)
+check(response.status_code == 200, f"Создание пользователя: Ожидается код 200, получен {response.status_code}")
+time.sleep(1)
+
+# 2. Получение пользователя
+username = user_data["username"]
+response = requests.get(f"{BASE_URL}/user/{username}")
+check(response.status_code == 200, f"Получение пользователя: Ожидается код 200 для username {username}, получен {response.status_code}")
+if response.status_code == 200:
+    fetched_user = response.json()
+    check(fetched_user["username"] == user_data["username"], f"Получение пользователя: Username должен быть {user_data['username']}, получен {fetched_user['username']}")
+    check(fetched_user["email"] == user_data["email"], f"Получение пользователя: Email должен быть {user_data['email']}, получен {fetched_user['email']}")
+time.sleep(1)
+
+# 3. Обновление пользователя
+updated_user_data = {
+    "id": user_data["id"],
+    "username": user_data["username"],
+    "firstName": "Updated",
+    "lastName": "User",
+    "email": "updated@user.com",
+    "password": "newpassword",
+    "phone": "0987654321",
+    "userStatus": 1
+}
+response = requests.put(f"{BASE_URL}/user/{username}", json=updated_user_data)
+check(response.status_code == 200, f"Обновление пользователя: Ожидается код 200, получен {response.status_code}")
+time.sleep(1)
+# Проверка обновления
+response = requests.get(f"{BASE_URL}/user/{username}")
+check(response.status_code == 200, f"Проверка обновления пользователя через GET: Ожидается код 200, получен {response.status_code}")
+if response.status_code == 200:
+    fetched_updated_user = response.json()
+    check(fetched_updated_user["firstName"] == updated_user_data["firstName"], f"Проверка обновления пользователя: Имя должно быть {updated_user_data['firstName']}, получено {fetched_updated_user['firstName']}")
+    check(fetched_updated_user["email"] == updated_user_data["email"], f"Проверка обновления пользователя: Email должен быть {updated_user_data['email']}, получен {fetched_updated_user['email']}")
+time.sleep(1)
+
+# 4. Удаление пользователя
+response = requests.delete(f"{BASE_URL}/user/{username}")
+check(response.status_code == 200, f"Удаление пользователя: Ожидается код 200, получен {response.status_code}")
+time.sleep(1)
+# Проверка удаления
+response = requests.get(f"{BASE_URL}/user/{username}")
+check(response.status_code == 404, f"Проверка удаления пользователя: Ожидается код 404 для удаленного username {username}, получен {response.status_code}")
+time.sleep(1)
+
+# Негативные сценарии
+print("Начинаем негативные тесты")
+# 1. Получение несуществующего питомца
+non_existent_pet_id = 999999
+response = requests.get(f"{BASE_URL}/pet/{non_existent_pet_id}")
+check(response.status_code == 404, f"Получение несуществующего питомца: Ожидается код 404 для ID {non_existent_pet_id}, получен {response.status_code}")
+time.sleep(1)
+
+# 2. Удаление несуществующего питомца
+response = requests.delete(f"{BASE_URL}/pet/{non_existent_pet_id}")
+check(response.status_code == 404, f"Удаление несуществующего питомца: Ожидается код 404 для ID {non_existent_pet_id}, получен {response.status_code}")
+time.sleep(1)
+
+# 3. Создание питомца с невалидными данными (отрицательный ID)
+invalid_pet_data = {
+    "id": -1,
+    "name": "Invalid",
+    "category": {"id": 1, "name": "Dogs"},
+    "status": "available"
+}
+response = requests.post(f"{BASE_URL}/pet", json=invalid_pet_data)
+check(response.status_code != 200, f"Создание питомца с невалидными данными: Ожидается код не 200, получен {response.status_code}")
+time.sleep(1)
+
+print("Все тесты завершены.")

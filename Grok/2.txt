@@ -1,0 +1,485 @@
+Находит часть ошибок, в некоторых случайных местах падает 404(а должно 200), возможная причина: время между созданием и след. операцией мало
+Я немного подкорректировал параллельные запросы до 10000 и получил ошибку занятости сервера
+Стандартные ошибки: пароли, удаления
+Быстрая
+
+import requests
+import sys
+import json
+import time
+from threading import Thread
+
+# Базовый URL API
+base_url = "https://petstore.swagger.io/v2"
+
+# Функция для вывода комментариев в консоль
+def log(message):
+    sys.stdout.write(message + "\n")
+
+# Функция для вывода ошибок с цветным выделением (красный цвет)
+def error(message):
+    sys.stderr.write(f"\033[31m{message}\033[0m\n")
+
+# Универсальная функция для отправки запросов
+def send_request(method, url, data=None, params=None, headers=None):
+    log(f"Отправка {method} запроса на {url}...")
+    response = requests.request(method, url, json=data, params=params, headers=headers)
+    log(f"Получен код состояния: {response.status_code}")
+    return response
+
+# === Тестирование CRUD для питомцев ===
+log("=== Тестирование CRUD для питомцев ===")
+
+# Данные для создания питомца
+pet_data = {
+    "id": 12345,
+    "name": "Buddy",
+    "photoUrls": ["string"],
+    "tags": [{"id": 0, "name": "tag1"}],
+    "status": "available"
+}
+
+# Создание питомца
+log("Создание нового питомца с POST /pet...")
+response = send_request("POST", f"{base_url}/pet", data=pet_data)
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при создании питомца, получен {response.status_code}"
+    pet = response.json()
+    assert pet["id"] == 12345, f"Ожидался ID питомца 12345, получен {pet['id']}"
+    assert pet["name"] == "Buddy", f"Ожидалось имя питомца Buddy, получено {pet['name']}"
+    log("Питомец успешно создан.")
+except AssertionError as e:
+    error(f"Ошибка при создании питомца: {e}")
+
+# Получение питомца
+log("Получение данных питомца с GET /pet/12345...")
+response = send_request("GET", f"{base_url}/pet/12345")
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при получении питомца, получен {response.status_code}"
+    pet = response.json()
+    assert pet["id"] == 12345, f"Ожидался ID питомца 12345, получен {pet['id']}"
+    log("Данные питомца успешно получены.")
+except AssertionError as e:
+    error(f"Ошибка при получении питомца: {e}")
+
+# Обновление питомца
+updated_pet_data = pet_data.copy()
+updated_pet_data["name"] = "Max"
+updated_pet_data["status"] = "sold"
+log("Обновление данных питомца с PUT /pet...")
+response = send_request("PUT", f"{base_url}/pet", data=updated_pet_data)
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при обновлении питомца, получен {response.status_code}"
+    pet = response.json()
+    assert pet["name"] == "Max", f"Ожидалось имя Max после обновления, получено {pet['name']}"
+    log("Питомец успешно обновлен.")
+except AssertionError as e:
+    error(f"Ошибка при обновлении питомца: {e}")
+
+# Удаление питомца
+log("Удаление питомца с DELETE /pet/12345...")
+response = send_request("DELETE", f"{base_url}/pet/12345")
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при удалении питомца, получен {response.status_code}"
+    log("Питомец успешно удален.")
+except AssertionError as e:
+    error(f"Ошибка при удалении питомца: {e}")
+
+# Проверка удаления
+log("Проверка отсутствия питомца после удаления с GET /pet/12345...")
+response = send_request("GET", f"{base_url}/pet/12345")
+try:
+    assert response.status_code == 404, f"Ожидался код 404 после удаления питомца, получен {response.status_code}"
+    log("Питомец действительно удален.")
+except AssertionError as e:
+    error(f"Ошибка при проверке удаления питомца: {e}")
+
+# === Тестирование API для заказов ===
+log("=== Тестирование API для заказов ===")
+
+# Данные для заказа
+order_data = {
+    "id": 1,
+    "petId": 12345,
+    "quantity": 1,
+    "shipDate": "2023-01-01T00:00:00.000Z",
+    "status": "placed",
+    "complete": False
+}
+
+# Создание заказа
+log("Создание заказа с POST /store/order...")
+response = send_request("POST", f"{base_url}/store/order", data=order_data)
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при создании заказа, получен {response.status_code}"
+    order = response.json()
+    assert order["id"] == 1, f"Ожидался ID заказа 1, получен {order['id']}"
+    log("Заказ успешно создан.")
+except AssertionError as e:
+    error(f"Ошибка при создании заказа: {e}")
+
+# Получение заказа
+log("Получение данных заказа с GET /store/order/1...")
+response = send_request("GET", f"{base_url}/store/order/1")
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при получении заказа, получен {response.status_code}"
+    order = response.json()
+    assert order["id"] == 1, f"Ожидался ID заказа 1, получен {order['id']}"
+    log("Данные заказа успешно получены.")
+except AssertionError as e:
+    error(f"Ошибка при получении заказа: {e}")
+
+# Удаление заказа
+log("Удаление заказа с DELETE /store/order/1...")
+response = send_request("DELETE", f"{base_url}/store/order/1")
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при удалении заказа, получен {response.status_code}"
+    log("Заказ успешно удален.")
+except AssertionError as e:
+    error(f"Ошибка при удалении заказа: {e}")
+
+# Проверка удаления
+log("Проверка отсутствия заказа с GET /store/order/1...")
+response = send_request("GET", f"{base_url}/store/order/1")
+try:
+    assert response.status_code == 404, f"Ожидался код 404 после удаления заказа, получен {response.status_code}"
+    log("Заказ действительно удален.")
+except AssertionError as e:
+    error(f"Ошибка при проверке удаления заказа: {e}")
+
+# === Тестирование управления пользователями ===
+log("=== Тестирование управления пользователями ===")
+
+# Данные для пользователя
+user_data = {
+    "id": 1,
+    "username": "user1",
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "john.doe@example.com",
+    "password": "password123",
+    "phone": "1234567890",
+    "userStatus": 1
+}
+
+# Создание пользователя
+log("Создание пользователя с POST /user...")
+response = send_request("POST", f"{base_url}/user", data=user_data)
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при создании пользователя, получен {response.status_code}"
+    log("Пользователь успешно создан.")
+except AssertionError as e:
+    error(f"Ошибка при создании пользователя: {e}")
+
+# Получение данных пользователя
+log("Получение данных пользователя с GET /user/user1...")
+response = send_request("GET", f"{base_url}/user/user1")
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при получении пользователя, получен {response.status_code}"
+    user = response.json()
+    assert user["username"] == "user1", f"Ожидался username user1, получен {user['username']}"
+    assert "password" not in user, "Пароль не должен возвращаться в данных пользователя"
+    log("Данные пользователя успешно получены.")
+except AssertionError as e:
+    error(f"Ошибка при получении пользователя: {e}")
+
+# Обновление пользователя
+updated_user_data = user_data.copy()
+updated_user_data["firstName"] = "Jane"
+log("Обновление данных пользователя с PUT /user/user1...")
+response = send_request("PUT", f"{base_url}/user/user1", data=updated_user_data)
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при обновлении пользователя, получен {response.status_code}"
+    log("Пользователь успешно обновлен.")
+except AssertionError as e:
+    error(f"Ошибка при обновлении пользователя: {e}")
+
+# Проверка обновления
+log("Проверка обновленных данных пользователя с GET /user/user1...")
+response = send_request("GET", f"{base_url}/user/user1")
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при получении обновленного пользователя, получен {response.status_code}"
+    user = response.json()
+    assert user["firstName"] == "Jane", f"Ожидалось имя Jane после обновления, получено {user['firstName']}"
+    log("Обновление пользователя подтверждено.")
+except AssertionError as e:
+    error(f"Ошибка при проверке обновления пользователя: {e}")
+
+# Удаление пользователя
+log("Удаление пользователя с DELETE /user/user1...")
+response = send_request("DELETE", f"{base_url}/user/user1")
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при удалении пользователя, получен {response.status_code}"
+    log("Пользователь успешно удален.")
+except AssertionError as e:
+    error(f"Ошибка при удалении пользователя: {e}")
+
+# Проверка удаления
+log("Проверка отсутствия пользователя с GET /user/user1...")
+response = send_request("GET", f"{base_url}/user/user1")
+try:
+    assert response.status_code == 404, f"Ожидался код 404 после удаления пользователя, получен {response.status_code}"
+    log("Пользователь действительно удален.")
+except AssertionError as e:
+    error(f"Ошибка при проверке удаления пользователя: {e}")
+
+# === Дополнительные проверки для питомцев ===
+log("=== Дополнительные проверки для питомцев ===")
+
+# Поиск питомцев по статусу
+log("Поиск питомцев по статусу available с GET /pet/findByStatus...")
+response = send_request("GET", f"{base_url}/pet/findByStatus", params={"status": "available"})
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при поиске по статусу, получен {response.status_code}"
+    pets = response.json()
+    assert isinstance(pets, list), "Ожидался список питомцев"
+    for pet in pets[:5]:  # Проверяем первые 5 для экономии времени
+        assert pet["status"] == "available", f"Ожидался статус available, получен {pet['status']}"
+    log("Поиск по статусу успешно выполнен.")
+except AssertionError as e:
+    error(f"Ошибка при поиске питомцев по статусу: {e}")
+
+# Создание питомца с тегом для поиска
+pet_data_tag = {"id": 12346, "name": "TaggedPet", "tags": [{"id": 1, "name": "cute"}], "status": "available"}
+log("Создание питомца с тегом для поиска с POST /pet...")
+response = send_request("POST", f"{base_url}/pet", data=pet_data_tag)
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при создании питомца с тегом, получен {response.status_code}"
+    log("Питомец с тегом успешно создан.")
+except AssertionError as e:
+    error(f"Ошибка при создании питомца с тегом: {e}")
+
+# Поиск питомцев по тегу
+log("Поиск питомцев по тегу cute с GET /pet/findByTags...")
+response = send_request("GET", f"{base_url}/pet/findByTags", params={"tags": "cute"})
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при поиске по тегам, получен {response.status_code}"
+    pets = response.json()
+    assert len(pets) > 0, "Ожидался хотя бы один питомец с тегом cute"
+    log("Поиск по тегам успешно выполнен.")
+except AssertionError as e:
+    error(f"Ошибка при поиске питомцев по тегам: {e}")
+
+# === Проверка аутентификации и безопасности ===
+log("=== Проверка аутентификации и безопасности ===")
+
+# Создание пользователя для тестов аутентификации
+user_data_auth = {
+    "id": 2,
+    "username": "user2",
+    "firstName": "Alice",
+    "lastName": "Smith",
+    "email": "alice@example.com",
+    "password": "securepass",
+    "phone": "0987654321",
+    "userStatus": 1
+}
+log("Создание пользователя для тестов аутентификации с POST /user...")
+response = send_request("POST", f"{base_url}/user", data=user_data_auth)
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при создании пользователя, получен {response.status_code}"
+    log("Пользователь для аутентификации успешно создан.")
+except AssertionError as e:
+    error(f"Ошибка при создании пользователя для аутентификации: {e}")
+
+# Логин пользователя
+log("Логин пользователя с GET /user/login...")
+response = send_request("GET", f"{base_url}/user/login", params={"username": "user2", "password": "securepass"})
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при логине, получен {response.status_code}"
+    login_response = response.json()
+    assert "password" not in login_response, "Пароль не должен возвращаться в ответе на логин"
+    log("Логин успешно выполнен.")
+except AssertionError as e:
+    error(f"Ошибка при логине: {e}")
+
+# Логаут пользователя
+log("Логаут пользователя с GET /user/logout...")
+response = send_request("GET", f"{base_url}/user/logout")
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при логауте, получен {response.status_code}"
+    log("Логаут успешно выполнен.")
+except AssertionError as e:
+    error(f"Ошибка при логауте: {e}")
+
+# Проверка закрытости пароля
+log("Проверка данных пользователя на отсутствие пароля с GET /user/user2...")
+response = send_request("GET", f"{base_url}/user/user2")
+try:
+    assert response.status_code == 200, f"Ожидался код 200 при получении пользователя, получен {response.status_code}"
+    user = response.json()
+    assert "password" not in user, "Пароль не должен возвращаться в данных пользователя"
+    log("Пароль не возвращается, проверка пройдена.")
+except AssertionError as e:
+    error(f"Ошибка при проверке закрытости пароля: {e}")
+
+# Логин с неверным паролем
+log("Попытка логина с неверным паролем с GET /user/login...")
+response = send_request("GET", f"{base_url}/user/login", params={"username": "user2", "password": "wrongpass"})
+try:
+    assert response.status_code != 200, f"Ожидался код ошибки при неверном пароле, получен {response.status_code}"
+    error_message = response.text
+    assert "password" not in error_message.lower(), "Сообщение об ошибке не должно содержать информацию о пароле"
+    log("Логин с неверным паролем отклонен корректно.")
+except AssertionError as e:
+    error(f"Ошибка при проверке неверного пароля: {e}")
+
+# Проверка ограничения повторных попыток
+log("Проверка ограничения повторных попыток логина...")
+for i in range(5):
+    log(f"Попытка {i+1} логина с неверным паролем...")
+    response = send_request("GET", f"{base_url}/user/login", params={"username": "user2", "password": "wrongpass"})
+    if response.status_code == 429:
+        log("Получен код 429 (Too Many Requests), ограничение работает.")
+        break
+else:
+    log("Ограничение повторных попыток не обнаружено после 5 запросов.")
+
+# === Проверка невалидных данных и ошибок ===
+log("=== Проверка невалидных данных и ошибок ===")
+
+# Запрос несуществующего питомца
+log("Запрос несуществующего питомца с GET /pet/999999...")
+response = send_request("GET", f"{base_url}/pet/999999")
+try:
+    assert response.status_code == 404, f"Ожидался код 404 для несуществующего питомца, получен {response.status_code}"
+    log("Обработка несуществующего ID корректна.")
+except AssertionError as e:
+    error(f"Ошибка при запросе несуществующего питомца: {e}")
+
+# Создание питомца с неполными данными
+incomplete_pet_data = {"id": 12347}
+log("Создание питомца с неполными данными с POST /pet...")
+response = send_request("POST", f"{base_url}/pet", data=incomplete_pet_data)
+try:
+    assert response.status_code == 400, f"Ожидался код 400 для неполных данных, получен {response.status_code}"
+    log("Валидация неполных данных работает корректно.")
+except AssertionError as e:
+    error(f"Ошибка при создании питомца с неполными данными: {e}")
+
+# Создание заказа с несуществующим питомцем
+invalid_order_data = {"id": 3, "petId": 999999, "quantity": 1, "status": "placed"}
+log("Создание заказа с несуществующим petId с POST /store/order...")
+response = send_request("POST", f"{base_url}/store/order", data=invalid_order_data)
+try:
+    assert response.status_code == 400, f"Ожидался код 400 для некорректного заказа, получен {response.status_code}"
+    log("Обработка некорректного заказа корректна.")
+except AssertionError as e:
+    error(f"Ошибка при создании заказа с несуществующим petId: {e}")
+
+# Использование неподдерживаемого метода
+log("Отправка неподдерживаемого метода PATCH на /pet...")
+response = send_request("PATCH", f"{base_url}/pet", data={"id": 12345})
+try:
+    assert response.status_code == 405, f"Ожидался код 405 для неподдерживаемого метода, получен {response.status_code}"
+    log("Обработка неподдерживаемого метода корректна.")
+except AssertionError as e:
+    error(f"Ошибка при использовании неподдерживаемого метода: {e}")
+
+# Слишком длинное имя пользователя
+long_username = "a" * 256
+long_user_data = {"username": long_username, "password": "pass"}
+log("Создание пользователя с длинным именем с POST /user...")
+response = send_request("POST", f"{base_url}/user", data=long_user_data)
+try:
+    assert response.status_code == 400, f"Ожидался код 400 для длинного имени, получен {response.status_code}"
+    log("Обработка длинного имени корректна.")
+except AssertionError as e:
+    error(f"Ошибка при создании пользователя с длинным именем: {e}")
+
+# Тестирование инъекций
+malicious_data = {"id": 12348, "name": "<script>alert('xss')</script>", "status": "available"}
+log("Создание питомца с потенциально опасными данными с POST /pet...")
+response = send_request("POST", f"{base_url}/pet", data=malicious_data)
+try:
+    assert response.status_code == 200, f"Ожидался код 200 для данных с инъекцией, получен {response.status_code}"
+    log("Данные с инъекцией приняты (дальнейшая обработка зависит от API).")
+except AssertionError as e:
+    error(f"Ошибка при тестировании инъекций: {e}")
+
+# Некорректный email
+invalid_email_data = {"id": 3, "username": "user3", "email": "invalid", "password": "pass"}
+log("Создание пользователя с некорректным email с POST /user...")
+response = send_request("POST", f"{base_url}/user", data=invalid_email_data)
+try:
+    assert response.status_code == 400, f"Ожидался код 400 для некорректного email, получен {response.status_code}"
+    log("Валидация email работает корректно.")
+except AssertionError as e:
+    error(f"Ошибка при создании пользователя с некорректным email: {e}")
+
+# Проверка утечки данных
+log("Проверка ответа на утечку пароля при создании пользователя...")
+response = send_request("POST", f"{base_url}/user", data=user_data_auth)
+try:
+    assert "password" not in response.text, "Пароль не должен быть в ответе"
+    log("Утечка конфиденциальных данных не обнаружена.")
+except AssertionError as e:
+    error(f"Ошибка при проверке утечки данных: {e}")
+
+# === Проверка масштабируемости и производительности ===
+log("=== Проверка масштабируемости и производительности ===")
+
+# Многопоточные запросы
+def send_multiple_requests():
+    threads = []
+    for _ in range(10):
+        t = Thread(target=send_request, args=("GET", f"{base_url}/pet/findByStatus", {"status": "available"}))
+        threads.append(t)
+        t.start()
+    for t in threads:
+        t.join()
+
+log("Выполнение 10 параллельных запросов...")
+send_multiple_requests()
+log("Многопоточные запросы завершены.")
+
+# Тестирование нагрузки
+log("Тестирование нагрузки: 100 последовательных запросов...")
+start_time = time.time()
+for _ in range(100):
+    send_request("GET", f"{base_url}/pet/findByStatus", params={"status": "available"})
+end_time = time.time()
+log(f"Время выполнения 100 запросов: {end_time - start_time:.2f} секунд")
+
+# Анализ времени ответа
+log("Измерение времени ответа для 10 запросов...")
+response_times = []
+for _ in range(10):
+    start = time.time()
+    send_request("GET", f"{base_url}/pet/findByStatus", params={"status": "available"})
+    end = time.time()
+    response_times.append(end - start)
+avg_time = sum(response_times) / len(response_times)
+log(f"Среднее время ответа: {avg_time:.4f} секунд")
+
+# === Интеграционные тесты ===
+log("=== Интеграционные тесты ===")
+
+# Создание питомца для интеграции
+pet_data_int = {"id": 12349, "name": "Integrate", "status": "available"}
+log("Создание питомца для интеграционного теста с POST /pet...")
+response = send_request("POST", f"{base_url}/pet", data=pet_data_int)
+pet_id = response.json().get("id", 12349)
+
+# Создание заказа
+order_data_int = {"id": 2, "petId": pet_id, "quantity": 1, "status": "placed"}
+log("Создание заказа для интеграционного теста с POST /store/order...")
+response = send_request("POST", f"{base_url}/store/order", data=order_data_int)
+order_id = response.json().get("id", 2)
+
+# Удаление питомца
+log("Удаление питомца в рамках интеграционного теста с DELETE /pet/12349...")
+response = send_request("DELETE", f"{base_url}/pet/{pet_id}")
+
+# Проверка заказа после удаления питомца
+log("Проверка заказа после удаления питомца с GET /store/order/2...")
+response = send_request("GET", f"{base_url}/store/order/{order_id}")
+try:
+    assert response.status_code == 200, f"Ожидался код 200 для заказа после удаления питомца, получен {response.status_code}"
+    order = response.json()
+    assert order["petId"] == pet_id, f"Ожидался petId {pet_id} в заказе, получен {order['petId']}"
+    log("Интеграционный тест пройден: заказ сохраняется после удаления питомца.")
+except AssertionError as e:
+    error(f"Ошибка в интеграционном тесте: {e}")
+
+log("=== Тестирование завершено ===")
