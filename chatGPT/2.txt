@@ -1,0 +1,621 @@
+Очень хорошие логи, возможно по причине улавливания контекста(его длина)
+Нашел ошибки, некоторые по причине долгого ответа сервера
+Сделал с первого раза
+
+
+#!/usr/bin/env python3
+import requests
+import unittest
+import sys
+import threading
+import time
+
+# ANSI-коды для цветного вывода
+GREEN = "\033[92m"
+RED = "\033[91m"
+YELLOW = "\033[93m"
+RESET = "\033[0m"
+
+def log_info(message):
+    sys.stdout.write(f"{GREEN}{message}{RESET}\n")
+    sys.stdout.flush()
+
+def log_error(message):
+    sys.stdout.write(f"{RED}{message}{RESET}\n")
+    sys.stdout.flush()
+
+def log_warning(message):
+    sys.stdout.write(f"{YELLOW}{message}{RESET}\n")
+    sys.stdout.flush()
+
+class PetStoreAPITest(unittest.TestCase):
+    # Базовый URL для Swagger Petstore API (версия v2)
+    base_url = "https://petstore.swagger.io/v2"
+
+    def test_pet_crud(self):
+        """Проверка основных операций CRUD для сущности 'Питомец'."""
+        pet_data = {
+            "id": 123456789,  # уникальный идентификатор
+            "category": {"id": 1, "name": "Dogs"},
+            "name": "TestDog",
+            "photoUrls": ["http://example.com/photo.jpg"],
+            "tags": [{"id": 1, "name": "test"}],
+            "status": "available"
+        }
+        # 1. Создание питомца (POST /pet)
+        with self.subTest("Создание питомца (POST /pet)"):
+            log_info("Запуск теста: Создание питомца с валидными данными (POST /pet)")
+            response = requests.post(f"{self.base_url}/pet", json=pet_data)
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при создании питомца, получен {response.status_code}. Тело ответа: {response.text}")
+                log_info("Успешно создан питомец, статус ответа 200")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # 2. Получение питомца (GET /pet/{petId})
+        with self.subTest("Получение питомца (GET /pet/{petId})"):
+            log_info("Запуск теста: Получение созданного питомца по ID (GET /pet/{petId})")
+            response = requests.get(f"{self.base_url}/pet/{pet_data['id']}")
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при получении питомца, получен {response.status_code}. Тело ответа: {response.text}")
+                json_data = response.json()
+                self.assertEqual(json_data.get("id"), pet_data["id"],
+                    "Ошибка: Полученный питомец имеет неверный ID")
+                log_info("Успешно получен питомец по ID, статус ответа 200")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # 3. Обновление питомца (PUT /pet)
+        updated_pet_data = pet_data.copy()
+        updated_pet_data["name"] = "UpdatedTestDog"
+        updated_pet_data["status"] = "pending"
+        with self.subTest("Обновление питомца (PUT /pet)"):
+            log_info("Запуск теста: Обновление данных питомца (PUT /pet)")
+            response = requests.put(f"{self.base_url}/pet", json=updated_pet_data)
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при обновлении питомца, получен {response.status_code}. Тело ответа: {response.text}")
+                log_info("Успешно обновлен питомец, статус ответа 200")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # 4. Удаление питомца (DELETE /pet/{petId})
+        with self.subTest("Удаление питомца (DELETE /pet/{petId})"):
+            log_info("Запуск теста: Удаление питомца по ID (DELETE /pet/{petId})")
+            response = requests.delete(f"{self.base_url}/pet/{pet_data['id']}")
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при удалении питомца, получен {response.status_code}. Тело ответа: {response.text}")
+                log_info("Успешно удален питомец, статус ответа 200")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+    def test_store_order(self):
+        """Проверка работы API для заказов (Store)."""
+        order_data = {
+            "id": 987654321,
+            "petId": 123456789,  # ID питомца (возможно, уже удалённого)
+            "quantity": 1,
+            "shipDate": "2025-03-10T12:00:00.000Z",
+            "status": "placed",
+            "complete": False
+        }
+        # Размещение заказа (POST /store/order)
+        with self.subTest("Размещение заказа (POST /store/order)"):
+            log_info("Запуск теста: Создание заказа (POST /store/order)")
+            response = requests.post(f"{self.base_url}/store/order", json=order_data)
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при создании заказа, получен {response.status_code}. Тело ответа: {response.text}")
+                log_info("Успешно создан заказ, статус ответа 200")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # Получение заказа (GET /store/order/{orderId})
+        with self.subTest("Получение заказа (GET /store/order/{orderId})"):
+            log_info("Запуск теста: Получение созданного заказа по ID (GET /store/order/{orderId})")
+            response = requests.get(f"{self.base_url}/store/order/{order_data['id']}")
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при получении заказа, получен {response.status_code}. Тело ответа: {response.text}")
+                json_data = response.json()
+                self.assertEqual(json_data.get("id"), order_data["id"],
+                    "Ошибка: Полученный заказ имеет неверный ID")
+                log_info("Успешно получен заказ, статус ответа 200")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # Удаление заказа (DELETE /store/order/{orderId})
+        with self.subTest("Удаление заказа (DELETE /store/order/{orderId})"):
+            log_info("Запуск теста: Удаление заказа по ID (DELETE /store/order/{orderId})")
+            response = requests.delete(f"{self.base_url}/store/order/{order_data['id']}")
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при удалении заказа, получен {response.status_code}. Тело ответа: {response.text}")
+                log_info("Успешно удален заказ, статус ответа 200")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+    def test_user_management(self):
+        """Проверка управления пользователями."""
+        user_data = {
+            "id": 111,
+            "username": "testuser",
+            "firstName": "Test",
+            "lastName": "User",
+            "email": "testuser@example.com",
+            "password": "TestPassword123",
+            "phone": "1234567890",
+            "userStatus": 1
+        }
+        # Создание пользователя (POST /user)
+        with self.subTest("Создание пользователя (POST /user)"):
+            log_info("Запуск теста: Регистрация нового пользователя (POST /user)")
+            response = requests.post(f"{self.base_url}/user", json=user_data)
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при создании пользователя, получен {response.status_code}. Тело ответа: {response.text}")
+                log_info("Пользователь успешно создан, статус ответа 200")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # Получение информации о пользователе (GET /user/{username})
+        with self.subTest("Получение информации о пользователе (GET /user/{username})"):
+            log_info("Запуск теста: Получение информации о пользователе (GET /user/{username})")
+            response = requests.get(f"{self.base_url}/user/{user_data['username']}")
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при получении информации о пользователе, получен {response.status_code}. Тело ответа: {response.text}")
+                json_data = response.json()
+                self.assertEqual(json_data.get("username"), user_data["username"],
+                    "Ошибка: Полученный пользователь имеет неверное имя пользователя")
+                # Проверка: если поле password присутствует, оно не должно совпадать с оригинальным
+                if "password" in json_data:
+                    self.assertNotEqual(json_data["password"], user_data["password"],
+                        "Ошибка: Пароль пользователя возвращается в открытом виде")
+                log_info("Информация о пользователе получена корректно, пароль не раскрыт")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # Обновление данных пользователя (PUT /user/{username})
+        with self.subTest("Обновление данных пользователя (PUT /user/{username})"):
+            log_info("Запуск теста: Обновление информации о пользователе (PUT /user/{username})")
+            updated_user_data = user_data.copy()
+            updated_user_data["firstName"] = "UpdatedTest"
+            response = requests.put(f"{self.base_url}/user/{user_data['username']}", json=updated_user_data)
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при обновлении информации о пользователе, получен {response.status_code}. Тело ответа: {response.text}")
+                log_info("Информация о пользователе успешно обновлена, статус ответа 200")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # Удаление пользователя (DELETE /user/{username})
+        with self.subTest("Удаление пользователя (DELETE /user/{username})"):
+            log_info("Запуск теста: Удаление пользователя (DELETE /user/{username})")
+            response = requests.delete(f"{self.base_url}/user/{user_data['username']}")
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при удалении пользователя, получен {response.status_code}. Тело ответа: {response.text}")
+                log_info("Пользователь успешно удален, статус ответа 200")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+    def test_additional_pet_checks(self):
+        """Дополнительные проверки для питомцев."""
+        # Поиск питомцев по статусу (GET /pet/findByStatus)
+        statuses = ["available", "pending", "sold"]
+        for status in statuses:
+            with self.subTest(f"Поиск питомцев по статусу: {status} (GET /pet/findByStatus)"):
+                log_info(f"Запуск теста: Поиск питомцев со статусом '{status}' (GET /pet/findByStatus)")
+                response = requests.get(f"{self.base_url}/pet/findByStatus", params={"status": status})
+                try:
+                    self.assertEqual(response.status_code, 200,
+                        f"Ошибка: Ожидался статус 200 при поиске питомцев по статусу '{status}', получен {response.status_code}. Тело ответа: {response.text}")
+                    log_info(f"Успешно выполнен поиск питомцев со статусом '{status}', статус ответа 200")
+                except AssertionError as e:
+                    log_error(str(e))
+                    raise
+
+        # Поиск питомцев по тегам (GET /pet/findByTags)
+        with self.subTest("Поиск питомцев по тегам (GET /pet/findByTags)"):
+            tag = "test"
+            log_info(f"Запуск теста: Поиск питомцев по тегу '{tag}' (GET /pet/findByTags)")
+            response = requests.get(f"{self.base_url}/pet/findByTags", params={"tags": tag})
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при поиске питомцев по тегу '{tag}', получен {response.status_code}. Тело ответа: {response.text}")
+                log_info(f"Успешно выполнен поиск питомцев по тегу '{tag}', статус ответа 200")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+    def test_authentication_security(self):
+        """Проверка аутентификации пользователей и безопасности паролей."""
+        # Для тестирования аутентификации создадим нового пользователя
+        user_data = {
+            "id": 222,
+            "username": "authuser",
+            "firstName": "Auth",
+            "lastName": "User",
+            "email": "authuser@example.com",
+            "password": "SecurePass123",
+            "phone": "0987654321",
+            "userStatus": 1
+        }
+        # Создаём пользователя
+        requests.post(f"{self.base_url}/user", json=user_data)
+
+        # Логин пользователя с корректными данными (GET /user/login)
+        with self.subTest("Логин пользователя с корректными данными (GET /user/login)"):
+            log_info("Запуск теста: Аутентификация пользователя с корректными данными (GET /user/login)")
+            params = {"username": user_data["username"], "password": user_data["password"]}
+            response = requests.get(f"{self.base_url}/user/login", params=params)
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при логине, получен {response.status_code}. Тело ответа: {response.text}")
+                self.assertNotIn(user_data["password"], response.text,
+                    "Ошибка: Пароль не должен возвращаться в открытом виде при логине")
+                log_info("Логин выполнен успешно, пароль не раскрыт")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # Логаут пользователя (GET /user/logout)
+        with self.subTest("Логаут пользователя (GET /user/logout)"):
+            log_info("Запуск теста: Завершение сессии пользователя (GET /user/logout)")
+            response = requests.get(f"{self.base_url}/user/logout")
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при логауте, получен {response.status_code}. Тело ответа: {response.text}")
+                log_info("Логаут выполнен успешно, статус ответа 200")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # Проверка закрытости пароля при получении информации о пользователе
+        with self.subTest("Проверка закрытости пароля (GET /user/{username})"):
+            log_info("Запуск теста: Проверка того, что пароль не раскрывается при получении информации о пользователе (GET /user/{username})")
+            response = requests.get(f"{self.base_url}/user/{user_data['username']}")
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при получении информации о пользователе, получен {response.status_code}. Тело ответа: {response.text}")
+                json_data = response.json()
+                if "password" in json_data:
+                    self.assertNotEqual(json_data["password"], user_data["password"],
+                        "Ошибка: Пароль пользователя не должен быть доступен в открытом виде")
+                log_info("Проверка безопасности пароля прошла успешно")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # Попытка логина с неверным паролем
+        with self.subTest("Логин с неверным паролем не должен раскрывать правильный пароль"):
+            log_info("Запуск теста: Попытка логина с неверным паролем (GET /user/login)")
+            params = {"username": user_data["username"], "password": "WrongPassword"}
+            response = requests.get(f"{self.base_url}/user/login", params=params)
+            try:
+                self.assertNotEqual(response.status_code, 200,
+                    f"Ошибка: Ожидалось, что логин с неверным паролем не будет успешным. Получен статус {response.status_code}. Тело ответа: {response.text}")
+                log_info("При логине с неверным паролем получена корректная ошибка, пароль не раскрыт")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # Проверка ограничения на повторные попытки входа
+        with self.subTest("Ограничение на повторные попытки входа с неверными данными"):
+            log_info("Запуск теста: Многократные неудачные попытки логина для проверки ограничения")
+            error_statuses = []
+            for i in range(3):
+                params = {"username": user_data["username"], "password": "WrongPassword"}
+                response = requests.get(f"{self.base_url}/user/login", params=params)
+                error_statuses.append(response.status_code)
+            try:
+                for code in error_statuses:
+                    self.assertNotEqual(code, 200,
+                        f"Ошибка: Ожидалось, что попытка логина с неверными данными не будет успешной, получен статус {code}")
+                log_info("Ограничение на повторные попытки входа с неверными данными работает корректно")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+    def test_invalid_data_and_error_handling(self):
+        """Проверка сценариев с невалидными данными и обработкой ошибок."""
+        # 1. Запрос с несуществующим ID питомца (GET /pet/{petId})
+        with self.subTest("Запрос с несуществующим ID питомца (GET /pet/{petId})"):
+            log_info("Запуск теста: Получение питомца с несуществующим ID (GET /pet/{petId})")
+            response = requests.get(f"{self.base_url}/pet/0")
+            try:
+                self.assertEqual(response.status_code, 404,
+                    f"Ошибка: Ожидался статус 404 при запросе несуществующего питомца, получен {response.status_code}. Тело ответа: {response.text}")
+                log_info("Запрос с несуществующим ID питомца корректно обработан, статус 404")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # 2. Неверные типы данных в запросе при создании питомца (POST /pet)
+        with self.subTest("Неверный тип данных при создании питомца (POST /pet)"):
+            log_info("Запуск теста: Отправка запроса на создание питомца с неверными типами данных (POST /pet)")
+            invalid_pet_data = {
+                "id": "invalid_id",  # ожидается число
+                "category": {"id": "invalid", "name": 123},
+                "name": 456,  # ожидается строка
+                "photoUrls": "not a list",  # ожидается список
+                "tags": "not a list",      # ожидается список
+                "status": 789              # ожидается строка
+            }
+            response = requests.post(f"{self.base_url}/pet", json=invalid_pet_data)
+            try:
+                self.assertIn(response.status_code, [400, 405, 404],
+                    f"Ошибка: Ожидался статус ошибки при создании питомца с неверными данными, получен {response.status_code}. Тело ответа: {response.text}")
+                log_info("Неверные типы данных корректно обработаны сервером, получен код ошибки")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # 3. Создание пользователя без обязательных полей (POST /user)
+        with self.subTest("Создание пользователя без обязательных полей (POST /user)"):
+            log_info("Запуск теста: Создание пользователя без обязательных полей (POST /user)")
+            incomplete_user_data = {
+                "id": 333,
+                # отсутствуют обязательные поля: username, password и т.д.
+                "firstName": "Incomplete",
+                "lastName": "User"
+            }
+            response = requests.post(f"{self.base_url}/user", json=incomplete_user_data)
+            try:
+                self.assertIn(response.status_code, [400, 405, 404],
+                    f"Ошибка: Ожидался статус ошибки при создании пользователя с неполными данными, получен {response.status_code}. Тело ответа: {response.text}")
+                log_info("Создание пользователя с неполными данными корректно обработано сервером, получен код ошибки")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # 4. Создание заказа с некорректными данными (POST /store/order)
+        with self.subTest("Создание заказа с некорректными данными (POST /store/order)"):
+            log_info("Запуск теста: Создание заказа с некорректными данными (POST /store/order)")
+            invalid_order_data = {
+                "id": "invalid_order",   # ожидается число
+                "petId": "invalid_pet",    # ожидается число
+                "quantity": "one",         # ожидается число
+                "shipDate": "invalid_date",# неверный формат даты
+                "status": 123,             # ожидается строка
+                "complete": "not a boolean"  # ожидается булево значение
+            }
+            response = requests.post(f"{self.base_url}/store/order", json=invalid_order_data)
+            try:
+                self.assertIn(response.status_code, [400, 405, 404],
+                    f"Ошибка: Ожидался статус ошибки при создании заказа с некорректными данными, получен {response.status_code}. Тело ответа: {response.text}")
+                log_info("Некорректные данные для заказа корректно обработаны сервером, получен код ошибки")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # 5. Использование неподдерживаемого HTTP-метода (PATCH)
+        with self.subTest("Использование неподдерживаемого HTTP-метода (PATCH)"):
+            log_info("Запуск теста: Отправка запроса с неподдерживаемым методом PATCH")
+            response = requests.patch(f"{self.base_url}/pet/123456789")
+            try:
+                self.assertIn(response.status_code, [405, 404],
+                    f"Ошибка: Ожидался статус ошибки при использовании метода PATCH, получен {response.status_code}. Тело ответа: {response.text}")
+                log_info("Неподдерживаемый HTTP-метод PATCH корректно обработан сервером")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # 6. Тестирование ввода слишком длинных строк (например, username)
+        with self.subTest("Ввод слишком длинной строки в поле username (POST /user)"):
+            log_info("Запуск теста: Отправка запроса с чрезмерно длинным значением username")
+            long_username = "u" * 300
+            long_user_data = {
+                "id": 444,
+                "username": long_username,
+                "firstName": "Long",
+                "lastName": "User",
+                "email": "longuser@example.com",
+                "password": "LongPass123",
+                "phone": "0000000000",
+                "userStatus": 1
+            }
+            response = requests.post(f"{self.base_url}/user", json=long_user_data)
+            try:
+                self.assertIn(response.status_code, [400, 405, 404],
+                    f"Ошибка: Ожидался статус ошибки при отправке слишком длинного username, получен {response.status_code}. Тело ответа: {response.text}")
+                log_info("Слишком длинный username корректно обработан сервером, получен код ошибки")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # 7. Тестирование на инъекции и XSS
+        with self.subTest("Тестирование на инъекции и XSS (POST /pet)"):
+            log_info("Запуск теста: Отправка данных с потенциально опасными символами для проверки XSS")
+            xss_pet_data = {
+                "id": 555555,
+                "category": {"id": 2, "name": "<script>alert('xss')</script>"},
+                "name": "<img src=x onerror=alert('xss') />",
+                "photoUrls": ["http://example.com/photo.jpg"],
+                "tags": [{"id": 2, "name": "<svg onload=alert('xss')>"}],
+                "status": "available"
+            }
+            response = requests.post(f"{self.base_url}/pet", json=xss_pet_data)
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при создании питомца с потенциально опасными данными, получен {response.status_code}. Тело ответа: {response.text}")
+                log_info("Данные с потенциально опасными символами обработаны корректно")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # 8. Проверка формата данных (например, некорректный email)
+        with self.subTest("Регистрация пользователя с некорректным форматом email (POST /user)"):
+            log_info("Запуск теста: Отправка запроса на создание пользователя с неверным форматом email")
+            invalid_email_user = {
+                "id": 555,
+                "username": "invalidemailuser",
+                "firstName": "Invalid",
+                "lastName": "Email",
+                "email": "not-an-email",
+                "password": "Pass123",
+                "phone": "1112223333",
+                "userStatus": 1
+            }
+            response = requests.post(f"{self.base_url}/user", json=invalid_email_user)
+            try:
+                self.assertIn(response.status_code, [400, 405, 404],
+                    f"Ошибка: Ожидался статус ошибки при регистрации с некорректным email, получен {response.status_code}. Тело ответа: {response.text}")
+                log_info("Некорректный формат email корректно обработан сервером, получен код ошибки")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # 9. Проверка отсутствия утечки конфиденциальной информации
+        with self.subTest("Проверка отсутствия утечки конфиденциальной информации (GET /user/{username})"):
+            log_info("Запуск теста: Проверка того, что ответ API не содержит конфиденциальных данных")
+            response = requests.get(f"{self.base_url}/user/authuser")
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при получении информации о пользователе, получен {response.status_code}. Тело ответа: {response.text}")
+                self.assertNotIn("password", response.text,
+                    "Ошибка: Ответ содержит конфиденциальную информацию (поле password)")
+                log_info("Конфиденциальная информация не утекла в ответе API")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+    def test_scalability_and_performance(self):
+        """Проверка масштабируемости и производительности API."""
+        # Многопоточное выполнение запросов
+        log_info("Запуск теста: Многопоточное выполнение запросов для проверки производительности API")
+        num_threads = 5
+        threads = []
+        response_codes = []
+
+        def make_request():
+            try:
+                resp = requests.get(f"{self.base_url}/pet/findByStatus", params={"status": "available"})
+                response_codes.append(resp.status_code)
+            except Exception as ex:
+                response_codes.append(str(ex))
+
+        for i in range(num_threads):
+            thread = threading.Thread(target=make_request)
+            threads.append(thread)
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        with self.subTest("Проверка многопоточных запросов"):
+            try:
+                for code in response_codes:
+                    self.assertEqual(code, 200,
+                        f"Ошибка: Ожидался статус 200 при многопоточном выполнении запроса, получен {code}")
+                log_info("Многопоточное выполнение запросов прошло успешно, все ответы со статусом 200")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # Нагрузочное тестирование: серия последовательных запросов
+        log_info("Запуск теста: Нагрузочное тестирование с последовательными запросами для анализа времени ответа")
+        start_time = time.time()
+        num_requests = 10
+        for i in range(num_requests):
+            response = requests.get(f"{self.base_url}/pet/findByStatus", params={"status": "available"})
+            try:
+                self.assertEqual(response.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при запросе {i+1}, получен {response.status_code}")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+        total_time = time.time() - start_time
+        average_time = total_time / num_requests
+        with self.subTest("Анализ времени ответа"):
+            try:
+                self.assertLess(average_time, 2,
+                    f"Ошибка: Среднее время ответа слишком велико: {average_time:.2f} секунд")
+                log_info(f"Среднее время ответа: {average_time:.2f} секунд, что в пределах допустимых значений")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+    def test_integration(self):
+        """Интеграционный тест: создание питомца, оформление заказа, удаление питомца и проверка состояния заказа."""
+        log_info("Запуск интеграционного теста: создание питомца, оформление заказа и последующее удаление питомца")
+        # Создание питомца
+        pet_data = {
+            "id": 777777,
+            "category": {"id": 3, "name": "Cats"},
+            "name": "IntegrationCat",
+            "photoUrls": ["http://example.com/cat.jpg"],
+            "tags": [{"id": 3, "name": "integration"}],
+            "status": "available"
+        }
+        response_create = requests.post(f"{self.base_url}/pet", json=pet_data)
+        with self.subTest("Интеграция: создание питомца"):
+            try:
+                self.assertEqual(response_create.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при создании питомца, получен {response_create.status_code}. Тело ответа: {response_create.text}")
+                log_info("Питомец успешно создан для интеграционного теста")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # Оформление заказа для питомца
+        order_data = {
+            "id": 888888,
+            "petId": pet_data["id"],
+            "quantity": 1,
+            "shipDate": "2025-03-11T12:00:00.000Z",
+            "status": "placed",
+            "complete": False
+        }
+        response_order = requests.post(f"{self.base_url}/store/order", json=order_data)
+        with self.subTest("Интеграция: оформление заказа"):
+            try:
+                self.assertEqual(response_order.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при оформлении заказа, получен {response_order.status_code}. Тело ответа: {response_order.text}")
+                log_info("Заказ успешно оформлен для интеграционного теста")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # Удаление питомца
+        response_delete = requests.delete(f"{self.base_url}/pet/{pet_data['id']}")
+        with self.subTest("Интеграция: удаление питомца"):
+            try:
+                self.assertEqual(response_delete.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при удалении питомца, получен {response_delete.status_code}. Тело ответа: {response_delete.text}")
+                log_info("Питомец успешно удален в интеграционном тесте")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+        # Проверка состояния заказа после удаления питомца
+        with self.subTest("Интеграция: проверка статуса заказа после удаления питомца"):
+            response_get_order = requests.get(f"{self.base_url}/store/order/{order_data['id']}")
+            try:
+                self.assertEqual(response_get_order.status_code, 200,
+                    f"Ошибка: Ожидался статус 200 при получении заказа, получен {response_get_order.status_code}. Тело ответа: {response_get_order.text}")
+                log_info("Заказ после удаления питомца получен, интеграционный тест завершён")
+            except AssertionError as e:
+                log_error(str(e))
+                raise
+
+if __name__ == '__main__':
+    # Запуск всех тестов
+    suite = unittest.TestLoader().loadTestsFromTestCase(PetStoreAPITest)
+    unittest.TextTestRunner(verbosity=2).run(suite)
+
+

@@ -1,0 +1,374 @@
+
+Нашла инъекцию
+
+
+#!/usr/bin/env python3
+"""
+Комплексное тестирование API https://restful-booker.herokuapp.com/
+===================================================================
+Этот скрипт выполняет следующие тесты:
+1. Проверка основных операций с бронированиями:
+   - Получение списка бронирований
+   - Создание нового бронирования (с обязательными полями)
+   - Получение информации о бронировании по ID и сравнение с исходными данными
+   - Полное обновление бронирования (PUT)
+   - Частичное обновление бронирования (PATCH)
+   - Удаление бронирования и проверка удаления
+
+2. Проверка аутентификации и работы с токенами:
+   - Получение токена авторизации через /auth
+   - Использование токена при обновлении и удалении бронирования
+
+3. Проверка сценариев с невалидными данными и ошибок:
+   - Запрос несуществующего бронирования (ожидается 404)
+   - Создание бронирования с отсутствием обязательных полей (ожидается ошибка)
+   - Использование неподдерживаемого HTTP-метода
+   - Тест на инъекции и XSS (проверка на наличие опасного содержимого)
+   - Тестирование отказоустойчивости при высокой частоте запросов (overload)
+
+4. Проверка дополнительных возможностей API:
+   - Фильтрация бронирований
+   - Проверка заголовков ответа (Content-Type)
+   - Анализ сообщений об ошибках (error logging)
+
+По ходу выполнения тестов подробные комментарии выводятся в консоль с цветным выделением: зелёным – успешный тест, красным – ошибка.
+"""
+
+import sys
+import time
+import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from colorama import init, Fore, Style
+
+# Инициализация colorama для цветного вывода (без необходимости вызывать print)
+init(autoreset=True)
+
+BASE_URL = "https://restful-booker.herokuapp.com"
+
+# Глобальные переменные для сохранения ID бронирования и токена авторизации
+booking_id = None
+auth_token = None
+original_booking_data = None
+
+def run_test(test_name, test_func):
+    """
+    Функция-обёртка для выполнения теста.
+    При выполнении выводится сообщение с названием теста и временем выполнения.
+    Если тест проходит – сообщение выводится зелёным, в случае ошибки – красным,
+    при этом в сообщении указывается код ответа сервера (если применимо).
+    """
+    start = time.time()
+    try:
+        test_func()
+        duration = time.time() - start
+        sys.stdout.write(Fore.GREEN + f"[PASS] {test_name} ({duration:.2f} s)\n" + Style.RESET_ALL)
+    except AssertionError as ae:
+        duration = time.time() - start
+        sys.stdout.write(Fore.RED + f"[FAIL] {test_name} ({duration:.2f} s): {ae}\n" + Style.RESET_ALL)
+    except Exception as e:
+        duration = time.time() - start
+        sys.stdout.write(Fore.RED + f"[ERROR] {test_name} ({duration:.2f} s): {e}\n" + Style.RESET_ALL)
+
+# ================================
+# 1. Операции с бронированиями
+# ================================
+
+def test_get_bookings():
+    """
+    Тест получения списка бронирований.
+    Отправляется GET-запрос на /booking.
+    Проверяется, что возвращён статус 200, заголовок Content-Type содержит application/json,
+    а тело ответа представляет собой список объектов с ключом 'bookingid'.
+    """
+    url = f"{BASE_URL}/booking"
+    response = requests.get(url)
+    assert response.status_code == 200, f"Ожидался статус 200, получен {response.status_code}"
+    content_type = response.headers.get("Content-Type", "")
+    assert "application/json" in content_type, f"Ожидался Content-Type, содержащий 'application/json', получен: {content_type}"
+    data = response.json()
+    assert isinstance(data, list), f"Ответ должен быть списком, получен тип {type(data)}"
+    for item in data:
+        assert "bookingid" in item, f"В элементе {item} отсутствует ключ 'bookingid'"
+
+def test_create_booking():
+    """
+    Тест создания нового бронирования.
+    Отправляется POST-запрос на /booking с валидными данными:
+    firstname, lastname, totalprice, depositpaid, bookingdates (с checkin и checkout) и additionalneeds.
+    Проверяется, что бронирование создано (статус 200 или 201), а в ответе присутствуют 'bookingid' и 'booking'
+    с данными, совпадающими с отправленными.
+    """
+    global booking_id, original_booking_data
+    url = f"{BASE_URL}/booking"
+    booking_data = {
+        "firstname": "John",
+        "lastname": "Doe",
+        "totalprice": 123,
+        "depositpaid": True,
+        "bookingdates": {"checkin": "2025-03-10", "checkout": "2025-03-15"},
+        "additionalneeds": "Breakfast"
+    }
+    original_booking_data = booking_data.copy()
+    response = requests.post(url, json=booking_data)
+    assert response.status_code in [200, 201], f"Ожидался статус 200 или 201, получен {response.status_code}"
+    resp_json = response.json()
+    assert "bookingid" in resp_json, f"В ответе отсутствует ключ 'bookingid': {resp_json}"
+    booking_id = resp_json["bookingid"]
+    assert "booking" in resp_json, f"В ответе отсутствует объект 'booking': {resp_json}"
+    booking_details = resp_json["booking"]
+    for key in booking_data:
+        assert booking_details.get(key) == booking_data[key], (
+            f"Несовпадение данных для '{key}': ожидалось {booking_data[key]}, получено {booking_details.get(key)}"
+        )
+
+def test_get_booking_by_id():
+    """
+    Тест получения бронирования по ID.
+    Отправляется GET-запрос на /booking/{id} и сравниваются полученные данные с данными, отправленными при создании.
+    """
+    global booking_id, original_booking_data
+    url = f"{BASE_URL}/booking/{booking_id}"
+    response = requests.get(url)
+    assert response.status_code == 200, f"Ожидался статус 200 при получении бронирования, получен {response.status_code}"
+    data = response.json()
+    for key in original_booking_data:
+        assert data.get(key) == original_booking_data[key], (
+            f"Несовпадение для '{key}': ожидалось {original_booking_data[key]}, получено {data.get(key)}"
+        )
+
+# ======================================
+# 2. Аутентификация и работа с токенами
+# ======================================
+
+def test_auth_token():
+    """
+    Тест получения токена авторизации.
+    Отправляется POST-запрос на /auth с корректными учетными данными (username: admin, password: password123).
+    Проверяется, что получен статус 200 и в ответе присутствует токен.
+    """
+    global auth_token
+    url = f"{BASE_URL}/auth"
+    credentials = {"username": "admin", "password": "password123"}
+    response = requests.post(url, json=credentials)
+    assert response.status_code == 200, f"Ожидался статус 200 для авторизации, получен {response.status_code}"
+    data = response.json()
+    assert "token" in data, f"В ответе не найден токен: {data}"
+    auth_token = data["token"]
+
+def test_put_booking():
+    """
+    Тест полного обновления бронирования (PUT).
+    Отправляется PUT-запрос на /booking/{id} с новыми данными.
+    Для запроса используется валидный токен (в заголовке Cookie).
+    Проверяется, что данные обновлены и возвращены корректно.
+    """
+    global booking_id, original_booking_data
+    url = f"{BASE_URL}/booking/{booking_id}"
+    new_data = {
+        "firstname": "Alice",
+        "lastname": "Smith",
+        "totalprice": 200,
+        "depositpaid": False,
+        "bookingdates": {"checkin": "2025-04-01", "checkout": "2025-04-10"},
+        "additionalneeds": "Lunch"
+    }
+    headers = {"Content-Type": "application/json", "Cookie": f"token={auth_token}"}
+    response = requests.put(url, json=new_data, headers=headers)
+    assert response.status_code == 200, f"Ожидался статус 200 при PUT, получен {response.status_code}"
+    data = response.json()
+    for key in new_data:
+        assert data.get(key) == new_data[key], (
+            f"При PUT обновление поля '{key}' не прошло: ожидалось {new_data[key]}, получено {data.get(key)}"
+        )
+    original_booking_data = new_data.copy()
+
+def test_patch_booking():
+    """
+    Тест частичного обновления бронирования (PATCH).
+    Отправляется PATCH-запрос на /booking/{id} с изменением отдельных полей (например, firstname и totalprice).
+    Проверяется, что изменения корректно применены.
+    """
+    global booking_id, original_booking_data
+    url = f"{BASE_URL}/booking/{booking_id}"
+    patch_data = {
+        "firstname": "Bob",
+        "totalprice": 250
+    }
+    headers = {"Content-Type": "application/json", "Cookie": f"token={auth_token}"}
+    response = requests.patch(url, json=patch_data, headers=headers)
+    assert response.status_code == 200, f"Ожидался статус 200 при PATCH, получен {response.status_code}"
+    data = response.json()
+    for key in patch_data:
+        assert data.get(key) == patch_data[key], (
+            f"При PATCH обновление поля '{key}' не прошло: ожидалось {patch_data[key]}, получено {data.get(key)}"
+        )
+    original_booking_data.update(patch_data)
+
+def test_delete_booking():
+    """
+    Тест удаления бронирования.
+    Отправляется DELETE-запрос на /booking/{id} с валидным токеном.
+    Затем отправляется GET-запрос для проверки, что бронирование удалено (ожидается статус 404).
+    """
+    global booking_id
+    url = f"{BASE_URL}/booking/{booking_id}"
+    headers = {"Cookie": f"token={auth_token}"}
+    response = requests.delete(url, headers=headers)
+    # Согласно спецификации API, успешное удаление возвращает статус 201
+    assert response.status_code == 201, f"Ожидался статус 201 при DELETE, получен {response.status_code}"
+    get_response = requests.get(url)
+    assert get_response.status_code == 404, f"После DELETE ожидался статус 404, получен {get_response.status_code}"
+
+# =====================================================
+# 3. Тестирование сценариев с невалидными данными и ошибок
+# =====================================================
+
+def test_get_nonexistent_booking():
+    """
+    Тест получения несуществующего бронирования.
+    Отправляется GET-запрос с несуществующим ID и проверяется, что возвращается статус 404.
+    """
+    url = f"{BASE_URL}/booking/9999999"
+    response = requests.get(url)
+    assert response.status_code == 404, f"Ожидался статус 404 для несуществующего бронирования, получен {response.status_code}"
+
+def test_create_booking_missing_fields():
+    """
+    Тест создания бронирования с отсутствующими обязательными полями.
+    В данном примере поле 'firstname' опущено.
+    Проверяется, что API возвращает ошибку (например, статус 400 или 500).
+    """
+    url = f"{BASE_URL}/booking"
+    booking_data = {
+        # "firstname" отсутствует
+        "lastname": "User",
+        "totalprice": 100,
+        "depositpaid": True,
+        "bookingdates": {"checkin": "2025-05-01", "checkout": "2025-05-05"},
+        "additionalneeds": "None"
+    }
+    response = requests.post(url, json=booking_data)
+    assert response.status_code != 200, f"При отсутствии обязательных полей ожидалась ошибка, получен статус {response.status_code}"
+
+def test_unsupported_http_method():
+    """
+    Тест использования неподдерживаемого HTTP-метода.
+    Отправляется DELETE-запрос на endpoint /booking (создание ресурса), который не поддерживает данный метод.
+    Ожидается статус ошибки (например, 405 Method Not Allowed).
+    """
+    url = f"{BASE_URL}/booking"
+    response = requests.delete(url)
+    assert response.status_code in [405, 501, 400, 404], f"Ожидался статус ошибки для неподдерживаемого метода, получен {response.status_code}"
+
+def test_injection_xss():
+    """
+    Тест на инъекции и XSS.
+    Отправляется POST-запрос с потенциально опасным содержимым (скрипт в поле firstname).
+    Если API не отклоняет запрос, проверяется, что в возвращённых данных отсутствует незашифрованный скрипт.
+    """
+    url = f"{BASE_URL}/booking"
+    malicious_data = {
+        "firstname": "<script>alert('xss')</script>",
+        "lastname": "Doe",
+        "totalprice": 150,
+        "depositpaid": False,
+        "bookingdates": {"checkin": "2025-06-01", "checkout": "2025-06-05"},
+        "additionalneeds": "None"
+    }
+    response = requests.post(url, json=malicious_data)
+    if response.status_code == 200:
+        data = response.json()
+        firstname = data.get("booking", {}).get("firstname", "")
+        assert "<script>" not in firstname, f"Обнаружена XSS-инъекция в поле firstname: {firstname}"
+    else:
+        assert response.status_code in [400, 422, 500], f"Ожидался статус ошибки для XSS, получен {response.status_code}"
+
+def test_overload():
+    """
+    Тест на отказоустойчивость при высокой нагрузке.
+    Параллельно отправляются несколько GET-запросов на /booking.
+    Проверяется, что все запросы возвращают статус 200.
+    """
+    url = f"{BASE_URL}/booking"
+    def make_request():
+        return requests.get(url)
+    
+    num_requests = 20  # Модератное количество запросов для имитации нагрузки
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(make_request) for _ in range(num_requests)]
+        for future in as_completed(futures):
+            resp = future.result()
+            assert resp.status_code == 200, f"При нагрузке ожидался статус 200, получен {resp.status_code}"
+
+# ======================================
+# 4. Дополнительные возможности API
+# ======================================
+
+def test_filtering_bookings():
+    """
+    Тест фильтрации бронирований.
+    Если API поддерживает фильтрацию (например, по дате заезда), отправляется GET-запрос с параметрами фильтрации.
+    Проверяется, что возвращён корректный список (тип списка) и статус 200.
+    """
+    url = f"{BASE_URL}/booking"
+    params = {"checkin": "2025-03-10"}
+    response = requests.get(url, params=params)
+    assert response.status_code == 200, f"Ожидался статус 200 при фильтрации, получен {response.status_code}"
+    data = response.json()
+    assert isinstance(data, list), f"Фильтр должен возвращать список, получен тип {type(data)}"
+
+def test_headers():
+    """
+    Тест проверки заголовков ответа.
+    Отправляется GET-запрос на /booking, проверяется наличие заголовка Content-Type с 'application/json'.
+    """
+    url = f"{BASE_URL}/booking"
+    response = requests.get(url)
+    content_type = response.headers.get("Content-Type", "")
+    assert "application/json" in content_type, f"Ожидался заголовок 'application/json', получен: {content_type}"
+
+def test_error_logging():
+    """
+    Тест анализа ошибок.
+    Отправляется GET-запрос с некорректным форматом ID (например, строка вместо числа).
+    Проверяется, что возвращается статус ошибки (400 или 404) и, если возможно, присутствует диагностическая информация.
+    """
+    url = f"{BASE_URL}/booking/invalid"
+    response = requests.get(url)
+    assert response.status_code in [400, 404], f"Ожидался статус ошибки для некорректного ID, получен {response.status_code}"
+    try:
+        data = response.json()
+    except Exception:
+        data = {}
+    # Дополнительно можно проверить наличие сообщения об ошибке в data (если API предоставляет такую информацию)
+    # Здесь проверка носит необязательный характер
+
+# =====================
+# Основная функция запуска тестов
+# =====================
+
+def main():
+    tests = [
+        ("Получение списка бронирований", test_get_bookings),
+        ("Создание нового бронирования", test_create_booking),
+        ("Получение бронирования по ID", test_get_booking_by_id),
+        ("Получение токена авторизации", test_auth_token),
+        ("Полное обновление бронирования (PUT)", test_put_booking),
+        ("Частичное обновление бронирования (PATCH)", test_patch_booking),
+        ("Удаление бронирования", test_delete_booking),
+        ("Получение несуществующего бронирования", test_get_nonexistent_booking),
+        ("Создание бронирования с отсутствующими обязательными полями", test_create_booking_missing_fields),
+        ("Неподдерживаемый HTTP-метод", test_unsupported_http_method),
+        ("Тест на инъекции/XSS", test_injection_xss),
+        ("Тестирование нагрузки (overload)", test_overload),
+        ("Фильтрация бронирований", test_filtering_bookings),
+        ("Проверка заголовков ответа", test_headers),
+        ("Анализ ошибок (error logging)", test_error_logging),
+    ]
+    
+    for test_name, test_func in tests:
+        run_test(test_name, test_func)
+
+if __name__ == "__main__":
+    main()
+
